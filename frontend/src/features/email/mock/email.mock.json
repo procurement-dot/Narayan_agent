@@ -1,0 +1,94 @@
+{
+  "emails": [
+    {
+      "id": "e1",
+      "name": "AKC Planning Team",
+      "subject": "Revised calendar and regional qualifiers",
+      "scope": "work",
+      "time": "09:08",
+      "preview": "Please send the updated regional qualifier calendar today by 2:30 PM.",
+      "content": "We need the revised regional qualifier calendar today by 2:30 PM so schools can plan. Please send the latest version.",
+      "kind": "task",
+      "draft": "Thanks. I am reviewing the regional calendar and will share the latest version.",
+      "source": "Gmail · AKC Planning Team",
+      "confidence": "High"
+    },
+    {
+      "id": "e2",
+      "name": "Academic Partner",
+      "subject": "Manjalpur review · 4 PM",
+      "scope": "work",
+      "time": "08:41",
+      "preview": "Can we meet today at 4 PM for 30 minutes to review the academic partner RFP?",
+      "content": "Can we meet today at 4 PM for 30 minutes to review the academic partner RFP? Please bring the earlier minutes and the latest proposal.",
+      "kind": "meeting",
+      "draft": "Yes, 4:00–4:30 PM works. I will bring the latest proposal and previous minutes.",
+      "source": "Gmail · Academic Partner",
+      "confidence": "High"
+    },
+    {
+      "id": "e3",
+      "name": "Community Newsletter",
+      "subject": "Your weekly updates",
+      "scope": "personal",
+      "time": "Yesterday",
+      "preview": "Highlights, offers, articles and announcements.",
+      "content": "Weekly updates about articles and offers. No explicit action requested.",
+      "kind": "noise",
+      "draft": "",
+      "source": "Gmail · Community Newsletter",
+      "confidence": "High"
+    },
+    {
+      "id": "e4",
+      "name": "Sports Equipment Supplier",
+      "subject": "Updated equipment quotation",
+      "scope": "work",
+      "time": "Yesterday",
+      "preview": "Please review the revised quotation before Monday.",
+      "content": "Attached is the updated quotation. Please review and revert before Monday. The price changed from the earlier version.",
+      "kind": "task",
+      "draft": "I will compare the updated quotation with the previous version and respond.",
+      "source": "Gmail · Equipment Supplier",
+      "confidence": "High"
+    }
+  ],
+  "proposals": [
+    {
+      "id": "akc",
+      "title": "Share revised AKC calendar",
+      "type": "task",
+      "start": "14:00",
+      "end": "14:30",
+      "detail": "Regional qualifier calendar · requested by AKC team",
+      "sources": ["w1", "e1"],
+      "confidence": "High",
+      "evidence": "Please send the updated regional qualifier calendar today by 2:30 PM.",
+      "context": "KinderSports · AKC"
+    },
+    {
+      "id": "manjalpur",
+      "title": "Manjalpur academic partner review",
+      "type": "meeting",
+      "start": "16:00",
+      "end": "16:30",
+      "detail": "Bring earlier minutes and latest RFP",
+      "sources": ["w2", "e2"],
+      "confidence": "High",
+      "evidence": "Can we meet today at 4 PM for 30 minutes to review the academic partner RFP?",
+      "context": "KinderSports · Manjalpur"
+    },
+    {
+      "id": "quotation",
+      "title": "Compare equipment quotation",
+      "type": "task",
+      "start": "17:00",
+      "end": "17:30",
+      "detail": "Compare latest quotation against prior estimate",
+      "sources": ["e4"],
+      "confidence": "High",
+      "evidence": "Please review the revised quotation before Monday.",
+      "context": "KinderSports · Procurement"
+    }
+  ]
+}
