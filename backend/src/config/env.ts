@@ -16,7 +16,8 @@ const envSchema = z.object({
   GOOGLE_REDIRECT_URI: z.string().default('http://localhost:4000/api/email/oauth/callback'),
   LLM_PROVIDER: z.string().default('gemini'),
   LLM_API_KEY: z.string().optional(),
-  LLM_MODEL: z.string().default('gemini-1.5-flash'),
+  LLM_MODEL: z.string().default('google/gemini-3.5-flash'),
+  OPENROUTER_BASE_URL: z.string().default('https://openrouter.ai/api/v1'),
   JWT_SECRET: z.string().default('default_jwt_secret'),
 });
 
