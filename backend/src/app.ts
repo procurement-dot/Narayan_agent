@@ -2,15 +2,19 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { emailRouter } from './features/email/email.routes.js';
+import { notesRouter } from './features/notes/notes.routes.js';
 
 export const app = express();
 
 app.use(helmet());
 app.use(cors());
-app.use(express.json());
+// Support up to 25MB for audio base64 uploads
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
 // Mount features
 app.use('/api/email', emailRouter);
+app.use('/api/notes', notesRouter);
 
 // Health check endpoint
 app.get('/health', (_req, res) => {
