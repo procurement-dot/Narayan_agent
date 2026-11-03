@@ -1,115 +1,287 @@
-import { supabase } from '../../config/supabase.js';
+import { db } from '../../db/db.js';
+import type { ParsedGmailMessage } from './gmail.service.js';
+import type { AiAnalysisResult } from './email.analyzer.js';
+
+function isUuid(str: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+}
 
 export const emailRepository = {
-  async getEmails(tab?: string) {
-    let query = supabase.from('emails').select('*').order('received_at', { ascending: false });
+  async upsertEmailAccount(data: {
+    userId: string;
+    email: string;
+    refreshTokenEnc: string;
+  }) {
+    const existing = await db.queryOne(
+      'SELECT id FROM email_accounts WHERE user_id = $1 AND provider = $2',
+      [data.userId, 'gmail']
+    );
 
-    if (tab === 'priority') {
-      query = query.neq('kind', 'noise');
-    } else if (tab === 'meetings') {
-      query = query.eq('kind', 'meeting');
-    } else if (tab === 'low') {
-      query = query.eq('kind', 'noise');
+    if (existing) {
+      return db.queryOne(
+        `UPDATE email_accounts 
+         SET email = $1, refresh_token_enc = $2, status = 'connected', updated_at = NOW() 
+         WHERE id = $3 
+         RETURNING *`,
+        [data.email, data.refreshTokenEnc, existing.id]
+      );
     }
 
-    const { data, error } = await query;
-    if (error) throw error;
-    return data || [];
+    return db.queryOne(
+      `INSERT INTO email_accounts (user_id, provider, email, refresh_token_enc, status) 
+       VALUES ($1, 'gmail', $2, $3, 'connected') 
+       RETURNING *`,
+      [data.userId, data.email, data.refreshTokenEnc]
+    );
+  },
+
+  async emailExists(accountId: string, providerMsgId: string): Promise<boolean> {
+    const row = await db.queryOne(
+      'SELECT id FROM emails WHERE account_id = $1 AND provider_msg_id = $2',
+      [accountId, providerMsgId]
+    );
+    return Boolean(row);
+  },
+
+  async getEmailAccount(userId: string) {
+    return db.queryOne(
+      `SELECT * FROM email_accounts 
+       WHERE user_id = $1 AND provider = 'gmail' AND status = 'connected' 
+       ORDER BY updated_at DESC LIMIT 1`,
+      [userId]
+    );
+  },
+
+  async disconnectEmailAccount(userId: string) {
+    return db.query(
+      `UPDATE email_accounts SET status = 'disconnected', updated_at = NOW() 
+       WHERE user_id = $1 AND provider = 'gmail'`,
+      [userId]
+    );
+  },
+
+  async insertEmailWithAnalysis(
+    accountId: string,
+    userId: string,
+    msg: ParsedGmailMessage,
+    analysis: AiAnalysisResult
+  ) {
+    // 1. Upsert Email record
+    const emailRow = await db.queryOne(
+      `INSERT INTO emails (
+        account_id, provider_msg_id, thread_id, from_name, from_email,
+        subject, preview, content, received_at, scope, kind, confidence, draft
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      ON CONFLICT (account_id, provider_msg_id) DO UPDATE SET
+        subject = EXCLUDED.subject,
+        preview = EXCLUDED.preview,
+        content = EXCLUDED.content,
+        kind = EXCLUDED.kind,
+        confidence = EXCLUDED.confidence,
+        draft = EXCLUDED.draft
+      RETURNING *`,
+      [
+        accountId,
+        msg.providerMsgId,
+        msg.threadId,
+        msg.fromName,
+        msg.fromEmail,
+        msg.subject,
+        msg.preview,
+        msg.content,
+        msg.receivedAt,
+        analysis.scope,
+        analysis.kind,
+        analysis.confidence,
+        analysis.draftReply,
+      ]
+    );
+
+    if (!emailRow) return null;
+
+    // 2. If AI detected a proposal, upsert into proposals table
+    if (analysis.proposal) {
+      const p = analysis.proposal;
+      await db.query(
+        `INSERT INTO proposals (
+          email_id, user_id, type, title, start_time, end_time, detail, context, evidence, confidence, status
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending')
+        ON CONFLICT DO NOTHING`,
+        [
+          emailRow.id,
+          userId,
+          p.type,
+          p.title,
+          p.start_time,
+          p.end_time,
+          p.detail,
+          msg.subject,
+          p.evidence,
+          p.confidence,
+        ]
+      );
+    }
+
+    return emailRow;
+  },
+
+  async getEmails(tab?: string) {
+    let sql = `
+      SELECT 
+        e.*,
+        d.body as saved_draft,
+        p.id as proposal_id
+      FROM emails e
+      LEFT JOIN email_drafts d ON d.email_id = e.id
+      LEFT JOIN proposals p ON p.email_id = e.id AND p.status != 'dismissed'
+      WHERE (e.is_archived IS FALSE OR e.is_archived IS NULL)
+    `;
+    const params: any[] = [];
+
+    if (tab === 'priority') {
+      sql += ` AND e.kind != 'noise'`;
+    } else if (tab === 'meetings') {
+      sql += ` AND e.kind = 'meeting'`;
+    } else if (tab === 'low') {
+      sql += ` AND e.kind = 'noise'`;
+    } else if (tab === 'drafts') {
+      sql += ` AND (d.body IS NOT NULL OR (e.draft IS NOT NULL AND e.draft != ''))`;
+    }
+
+    sql += ` ORDER BY e.received_at DESC LIMIT 50`;
+
+    return db.query(sql, params);
   },
 
   async getEmailById(id: string) {
-    const { data, error } = await supabase
-      .from('emails')
-      .select('*, email_drafts(body)')
-      .eq('id', id)
-      .single();
-
-    if (error) throw error;
-    return data;
+    return db.queryOne(
+      `SELECT e.*, d.body as saved_draft 
+       FROM emails e 
+       LEFT JOIN email_drafts d ON d.email_id = e.id 
+       WHERE e.id = $1`,
+      [id]
+    );
   },
 
   async upsertDraft(emailId: string, userId: string, body: string) {
-    const { data, error } = await supabase
-      .from('email_drafts')
-      .upsert({ email_id: emailId, user_id: userId, body, updated_at: new Date().toISOString() })
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
+    if (!isUuid(emailId)) {
+      return { email_id: emailId, user_id: userId, body };
+    }
+    return db.queryOne(
+      `INSERT INTO email_drafts (email_id, user_id, body, updated_at) 
+       VALUES ($1, $2, $3, NOW()) 
+       ON CONFLICT (email_id, user_id) DO UPDATE SET 
+         body = EXCLUDED.body, 
+         updated_at = NOW() 
+       RETURNING *`,
+      [emailId, userId, body]
+    );
   },
 
   async markArchive(emailId: string) {
-    const { data, error } = await supabase
-      .from('emails')
-      .update({ status: 'Archive proposed (demo)' })
-      .eq('id', emailId)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
+    if (!isUuid(emailId)) {
+      return { id: emailId, status: 'Archive proposed (demo)' };
+    }
+    return db.queryOne(
+      `UPDATE emails 
+       SET status = 'Archive proposed (demo)', is_archived = TRUE 
+       WHERE id = $1 
+       RETURNING *`,
+      [emailId]
+    );
   },
 
-  async getProposalByEmailId(emailId: string) {
-    const { data, error } = await supabase
-      .from('proposals')
-      .select('*')
-      .eq('email_id', emailId)
-      .single();
-
-    if (error) throw error;
-    return data;
+  async updateEmailStatus(emailId: string, status: string) {
+    if (!isUuid(emailId)) {
+      return { id: emailId, status };
+    }
+    return db.queryOne(
+      `UPDATE emails 
+       SET status = $1 
+       WHERE id = $2 
+       RETURNING *`,
+      [status, emailId]
+    );
   },
 
-  async approveProposal(proposalId: string, userId: string, taskData: { title: string; start: string; end: string; detail: string }) {
-    // Check if task already exists for this proposal to enforce duplicate guard
-    const { data: existingTask } = await supabase
-      .from('tasks')
-      .select('id')
-      .eq('source_proposal_id', proposalId)
-      .maybeSingle();
+  async getProposalByEmailId(idOrEmailId: string) {
+    if (!isUuid(idOrEmailId)) {
+      return null;
+    }
+    return db.queryOne(
+      `SELECT * FROM proposals 
+       WHERE (email_id = $1 OR id = $1) AND status != 'dismissed' 
+       ORDER BY created_at DESC LIMIT 1`,
+      [idOrEmailId]
+    );
+  },
 
-    if (existingTask) {
+  async approveProposal(
+    proposalId: string,
+    userId: string,
+    taskData: { title: string; start: string; end: string; detail: string }
+  ) {
+    // 1. Enforce duplicate guard
+    const existing = await db.queryOne(
+      'SELECT id FROM tasks WHERE source_proposal_id = $1',
+      [proposalId]
+    );
+
+    if (existing) {
       const err = new Error('Already on your day; duplicate prevented.');
       (err as any).statusCode = 409;
       throw err;
     }
 
-    // Insert task
-    const { data: newTask, error: taskError } = await supabase
-      .from('tasks')
-      .insert({
-        user_id: userId,
-        title: taskData.title,
-        start_time: taskData.start,
-        end_time: taskData.end,
-        detail: taskData.detail,
-        source_proposal_id: proposalId,
-      })
-      .select()
-      .single();
+    // 2. Insert into tasks table
+    const newTask = await db.queryOne(
+      `INSERT INTO tasks (user_id, date, title, start_time, end_time, detail, source_proposal_id) 
+       VALUES ($1, CURRENT_DATE, $2, $3, $4, $5, $6) 
+       RETURNING *`,
+      [
+        userId,
+        taskData.title,
+        taskData.start,
+        taskData.end,
+        taskData.detail,
+        proposalId,
+      ]
+    );
 
-    if (taskError) throw taskError;
-
-    // Update proposal status
-    await supabase
-      .from('proposals')
-      .update({ status: 'approved' })
-      .eq('id', proposalId);
+    // 3. Mark proposal as approved in proposals table (if UUID)
+    if (isUuid(proposalId)) {
+      await db.query(
+        `UPDATE proposals SET status = 'approved' WHERE id = $1`,
+        [proposalId]
+      );
+    }
 
     return newTask;
   },
 
   async dismissProposal(proposalId: string) {
-    const { data, error } = await supabase
-      .from('proposals')
-      .update({ status: 'dismissed' })
-      .eq('id', proposalId)
-      .select()
-      .single();
+    if (!isUuid(proposalId)) {
+      return { id: proposalId, status: 'dismissed' };
+    }
+    return db.queryOne(
+      `UPDATE proposals SET status = 'dismissed' WHERE id = $1 RETURNING *`,
+      [proposalId]
+    );
+  },
 
-    if (error) throw error;
-    return data;
+  async getSummary() {
+    const counts = await db.queryOne(`
+      SELECT 
+        COUNT(*) FILTER (WHERE kind = 'task' AND (is_archived IS FALSE OR is_archived IS NULL)) as requests,
+        COUNT(*) FILTER (WHERE kind = 'noise' AND (is_archived IS FALSE OR is_archived IS NULL)) as low_signal,
+        COUNT(*) FILTER (WHERE kind = 'meeting' AND (is_archived IS FALSE OR is_archived IS NULL)) as merged_meetings
+      FROM emails
+    `);
+
+    return {
+      requests: Number(counts?.requests || 0),
+      lowSignal: Number(counts?.low_signal || 0),
+      mergedMeetings: Number(counts?.merged_meetings || 0),
+    };
   },
 };

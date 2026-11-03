@@ -14,6 +14,8 @@ export interface EmailItem {
   draft: string;
   source: string;
   confidence: 'High' | 'Medium' | 'Low';
+  status?: string;
+  proposalId?: string;
 }
 
 export interface ProposalItem {
