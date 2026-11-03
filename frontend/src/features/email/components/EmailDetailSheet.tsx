@@ -5,6 +5,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  ActivityIndicator,
 } from 'react-native';
 import { BottomSheet } from '../../../shared/components/BottomSheet';
 import { TOKENS } from '../../../shared/theme/tokens';
@@ -17,8 +18,10 @@ interface EmailDetailSheetProps {
   visible: boolean;
   onClose: () => void;
   onSaveDraft: (emailId: string, draft: string) => void;
+  onSendReply: (emailId: string, draft: string) => Promise<void>;
+  onGenerateDraft: (emailId: string) => Promise<string>;
   onArchive: (emailId: string) => void;
-  onReviewAction: (emailId: string) => void;
+  onReviewAction?: (emailId: string) => void;
 }
 
 export const EmailDetailSheet: React.FC<EmailDetailSheetProps> = ({
@@ -27,10 +30,14 @@ export const EmailDetailSheet: React.FC<EmailDetailSheetProps> = ({
   visible,
   onClose,
   onSaveDraft,
+  onSendReply,
+  onGenerateDraft,
   onArchive,
   onReviewAction,
 }) => {
   const [draftText, setDraftText] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isSending, setIsSending] = useState(false);
 
   useEffect(() => {
     if (email) {
@@ -45,34 +52,63 @@ export const EmailDetailSheet: React.FC<EmailDetailSheetProps> = ({
     ? 'Low priority'
     : email.kind === 'meeting'
     ? 'Meeting'
-    : 'Action';
+    : 'Action candidate';
+
+  const handleGenerate = async () => {
+    try {
+      setIsGenerating(true);
+      const generated = await onGenerateDraft(email.id);
+      if (generated) {
+        setDraftText(generated);
+      }
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleSend = async () => {
+    if (!draftText.trim()) return;
+    try {
+      setIsSending(true);
+      await onSendReply(email.id, draftText);
+    } finally {
+      setIsSending(false);
+    }
+  };
 
   const footerButtons = (
     <View style={styles.footerContainer}>
       <TouchableOpacity
-        style={styles.outlineBtn}
+        style={styles.archiveBtn}
         onPress={() => onArchive(email.id)}
+        disabled={isSending}
       >
-        <Text style={styles.outlineBtnText}>Archive preview</Text>
+        <Text style={styles.archiveBtnText}>Archive</Text>
       </TouchableOpacity>
 
-      {!isNoise && (
-        <>
-          <TouchableOpacity
-            style={styles.outlineBtn}
-            onPress={() => onSaveDraft(email.id, draftText)}
-          >
-            <Text style={styles.outlineBtnText}>Save draft</Text>
-          </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.outlineBtn}
+        onPress={() => onSaveDraft(email.id, draftText)}
+        disabled={isSending}
+      >
+        <Text style={styles.outlineBtnText}>Save draft</Text>
+      </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.solidBtn}
-            onPress={() => onReviewAction(email.id)}
-          >
-            <Text style={styles.solidBtnText}>Review extracted action</Text>
-          </TouchableOpacity>
-        </>
-      )}
+      <TouchableOpacity
+        style={[styles.sendBtn, isSending && styles.sendBtnDisabled]}
+        onPress={handleSend}
+        disabled={isSending || !draftText.trim()}
+        activeOpacity={0.8}
+      >
+        {isSending ? (
+          <View style={styles.sendingRow}>
+            <ActivityIndicator size="small" color="#ffffff" />
+            <Text style={styles.sendBtnText}> Sending...</Text>
+          </View>
+        ) : (
+          <Text style={styles.sendBtnText}>Send reply ↗</Text>
+        )}
+      </TouchableOpacity>
     </View>
   );
 
@@ -84,35 +120,54 @@ export const EmailDetailSheet: React.FC<EmailDetailSheetProps> = ({
       footer={footerButtons}
     >
       <Text style={styles.kicker}>
-        {email.name.toUpperCase()} · {email.time} · SAMPLE EMAIL
+        {email.name.toUpperCase()} · {email.time} · {email.source}
       </Text>
 
       <Text style={styles.content}>{email.content}</Text>
 
-      <View style={styles.tagBadge}>
-        <Text style={styles.tagText}>Suggested intent: {intentLabel}</Text>
+      <View style={styles.metaRow}>
+        <View style={styles.tagBadge}>
+          <Text style={styles.tagText}>Suggested intent: {intentLabel}</Text>
+        </View>
+
+        {onReviewAction && !isNoise && (
+          <TouchableOpacity
+            style={styles.reviewActionLink}
+            onPress={() => onReviewAction(email.id)}
+          >
+            <Text style={styles.reviewActionLinkText}>Review extracted action →</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
-      {!isNoise ? (
-        <View style={styles.formGroup}>
-          <Text style={styles.label}>Editable reply — never auto-sent</Text>
-          <TextInput
-            style={styles.textarea}
-            multiline
-            numberOfLines={4}
-            value={draftText}
-            onChangeText={setDraftText}
-            placeholder="Type your reply here..."
-            placeholderTextColor={TOKENS.colors.inkMuted}
-          />
+      {/* Draft Reply Area */}
+      <View style={styles.replyBoxContainer}>
+        <View style={styles.replyHeaderRow}>
+          <Text style={styles.replyLabel}>Editable reply — never auto-sent</Text>
+          <TouchableOpacity
+            style={styles.aiDraftBtn}
+            onPress={handleGenerate}
+            disabled={isGenerating}
+            activeOpacity={0.7}
+          >
+            {isGenerating ? (
+              <ActivityIndicator size="small" color="#355e43" />
+            ) : (
+              <Text style={styles.aiDraftBtnText}>✨ Ask AI to draft</Text>
+            )}
+          </TouchableOpacity>
         </View>
-      ) : (
-        <View style={styles.noticeBox}>
-          <Text style={styles.noticeText}>
-            Suggested: archive, rather than delete. NRYN should wait for your decision.
-          </Text>
-        </View>
-      )}
+
+        <TextInput
+          style={styles.textarea}
+          multiline
+          numberOfLines={4}
+          value={draftText}
+          onChangeText={setDraftText}
+          placeholder="Tap '✨ Ask AI to draft' or type your reply here..."
+          placeholderTextColor={TOKENS.colors.inkMuted}
+        />
+      </View>
     </BottomSheet>
   );
 };
@@ -134,6 +189,12 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     fontFamily: FONTS.regular,
   },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
   tagBadge: {
     alignSelf: 'flex-start',
     backgroundColor: '#f7f8f3',
@@ -142,7 +203,6 @@ const styles = StyleSheet.create({
     borderRadius: 99,
     paddingVertical: 5,
     paddingHorizontal: 9,
-    marginBottom: 18,
   },
   tagText: {
     fontSize: 10,
@@ -150,16 +210,44 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontFamily: FONTS.regular,
   },
-  formGroup: {
-    marginTop: 8,
-    marginBottom: 14,
+  reviewActionLink: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
   },
-  label: {
+  reviewActionLinkText: {
+    fontSize: 11,
+    color: '#3d6349',
+    fontWeight: '600',
+    fontFamily: FONTS.regular,
+  },
+  replyBoxContainer: {
+    marginTop: 6,
+    marginBottom: 10,
+  },
+  replyHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  replyLabel: {
     fontSize: 11,
     color: '#758176',
     fontWeight: '600',
-    marginBottom: 6,
     fontFamily: FONTS.regular,
+  },
+  aiDraftBtn: {
+    backgroundColor: '#edf4ee',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 99,
+    borderWidth: 1,
+    borderColor: '#cde0d2',
+  },
+  aiDraftBtnText: {
+    fontSize: 11,
+    color: '#2a5438',
+    fontWeight: '600',
   },
   textarea: {
     backgroundColor: TOKENS.colors.paper,
@@ -169,33 +257,36 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 12,
     color: TOKENS.colors.ink,
-    minHeight: 80,
+    minHeight: 90,
     textAlignVertical: 'top',
-    fontFamily: FONTS.regular,
-  },
-  noticeBox: {
-    backgroundColor: TOKENS.colors.noticeBg,
-    borderWidth: 1,
-    borderColor: TOKENS.colors.noticeBorder,
-    borderRadius: 14,
-    padding: 13,
-    marginVertical: 12,
-  },
-  noticeText: {
-    fontSize: 11,
-    lineHeight: 18,
-    color: '#738275',
     fontFamily: FONTS.regular,
   },
   footerContainer: {
     flex: 1,
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
+  },
+  archiveBtn: {
+    borderWidth: 1,
+    borderColor: '#e1e7de',
+    borderRadius: 13,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#faf9f5',
+  },
+  archiveBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#69776b',
+    fontFamily: FONTS.regular,
   },
   outlineBtn: {
     flex: 1,
     borderWidth: 1,
-    borderColor: '#e1e7de',
+    borderColor: '#d5ded3',
     borderRadius: 13,
     paddingVertical: 10,
     alignItems: 'center',
@@ -208,18 +299,26 @@ const styles = StyleSheet.create({
     color: '#33463a',
     fontFamily: FONTS.regular,
   },
-  solidBtn: {
-    flex: 1.4,
-    backgroundColor: '#324c3d',
+  sendBtn: {
+    flex: 1.5,
+    backgroundColor: '#28382c',
     borderRadius: 13,
     paddingVertical: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  solidBtnText: {
+  sendBtnDisabled: {
+    opacity: 0.6,
+  },
+  sendingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  sendBtnText: {
     fontSize: 11,
     fontWeight: '700',
     color: '#ffffff',
     fontFamily: FONTS.regular,
+    letterSpacing: 0.3,
   },
 });

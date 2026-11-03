@@ -1,196 +1,134 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  ScrollView,
-  Platform,
+  PanResponder,
 } from 'react-native';
 import { useNavigationStore } from './navigation.store';
-import { DOCK_SPACES } from './navigation.types';
-import { Icon } from '../../shared/components/Icon';
 
 export const BottomBar: React.FC = () => {
-  const { currentSpace, navigate, openChat } = useNavigationStore();
+  const { isDockOpen, openDock, openChat } = useNavigationStore();
+
+  // Edge Swipe PanResponder to open dock when user swipes left near right edge
+  const edgePanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return Math.abs(gestureState.dx) > 10 || Math.abs(gestureState.dy) > 10;
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        // Swiping left from the right edge or a quick tap opens the dock
+        if (gestureState.dx < -15 || (Math.abs(gestureState.dx) < 8 && Math.abs(gestureState.dy) < 8)) {
+          openDock();
+        }
+      },
+    })
+  ).current;
+
+  // When dock is open, hide edge slider and orb so they don't overlap with the right dock
+  if (isDockOpen) {
+    return null;
+  }
 
   return (
     <>
+      {/* Invisible Right Edge Swipe Catch-Zone */}
+      <View
+        style={styles.edgeSwipeZone}
+        {...edgePanResponder.panHandlers}
+      />
+
+      {/* Right Edge Slide Handle (HTML Reference: #nryn-edge-slider) */}
+      <TouchableOpacity
+        style={styles.edgeSlider}
+        onPress={openDock}
+        activeOpacity={0.8}
+        accessibilityLabel="Open NRYN spaces dock"
+        accessibilityRole="button"
+        {...edgePanResponder.panHandlers}
+      >
+        <View style={styles.sliderPillBar} />
+      </TouchableOpacity>
+
       {/* Floating Ask NRYN Orb (HTML Reference: #nryn-orb) */}
       <TouchableOpacity
         style={styles.floatingAskOrb}
         onPress={openChat}
-        activeOpacity={0.82}
+        activeOpacity={0.85}
         accessibilityLabel="Ask NRYN"
+        accessibilityRole="button"
       >
         <Text style={styles.askOrbStar}>✳</Text>
       </TouchableOpacity>
-
-      {/* macOS Style Glassmorphism Floating Dock */}
-      <View style={styles.floatingContainer} pointerEvents="box-none">
-        <View style={styles.macDock}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.dockRail}
-          >
-            {DOCK_SPACES.map((space) => {
-              const isActive = currentSpace === space.id;
-              return (
-                <TouchableOpacity
-                  key={space.id}
-                  style={[styles.dockGlyph, isActive && styles.dockGlyphActive]}
-                  onPress={() => navigate(space.id)}
-                  activeOpacity={0.75}
-                >
-                  <View
-                    style={[
-                      styles.glyphShape,
-                      { backgroundColor: space.color },
-                      isActive && styles.glyphShapeActive,
-                    ]}
-                  >
-                    <Icon
-                      name={space.icon}
-                      size={22}
-                      color={isActive ? '#1e2821' : '#384b40'}
-                      strokeWidth={isActive ? 2 : 1.65}
-                    />
-                  </View>
-                  <Text
-                    style={[styles.glyphLabel, isActive && styles.glyphLabelActive]}
-                    numberOfLines={1}
-                  >
-                    {space.label}
-                  </Text>
-                  {isActive ? (
-                    <View style={styles.activeDot} />
-                  ) : (
-                    <View style={styles.activeDotPlaceholder} />
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-      </View>
     </>
   );
 };
 
 const styles = StyleSheet.create({
+  // Transparent touch stripe along the right edge for smooth swipe detection
+  edgeSwipeZone: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 22,
+    zIndex: 42,
+  },
+  // Authentic Right-Edge Slider Handle (#nryn-edge-slider from nryn-v6.9.html)
+  edgeSlider: {
+    position: 'absolute',
+    right: 0,
+    top: '50%',
+    transform: [{ translateY: -75 }],
+    width: 14,
+    height: 150,
+    borderTopLeftRadius: 14,
+    borderBottomLeftRadius: 14,
+    backgroundColor: 'rgba(137, 155, 144, 0.32)',
+    borderWidth: 1,
+    borderColor: 'rgba(115, 139, 122, 0.25)',
+    borderRightWidth: 0,
+    shadowColor: '#506958',
+    shadowOffset: { width: -2, height: 0 },
+    shadowOpacity: 0.14,
+    shadowRadius: 14,
+    elevation: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 45,
+  },
+  sliderPillBar: {
+    width: 3,
+    height: 70,
+    borderRadius: 20,
+    backgroundColor: '#6e8878',
+  },
+  // Floating Ask NRYN Orb (#nryn-orb from nryn-v6.9.html)
   floatingAskOrb: {
     position: 'absolute',
     right: 20,
-    bottom: 96,
+    bottom: 24,
     width: 50,
     height: 50,
     borderRadius: 25,
-    backgroundColor: '#3f5d50',
+    backgroundColor: '#405e51',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.75)',
+    borderColor: 'rgba(255, 255, 255, 0.8)',
     shadowColor: '#20392c',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.35,
     shadowRadius: 20,
     elevation: 12,
-    zIndex: 60,
+    zIndex: 43,
   },
   askOrbStar: {
     fontSize: 24,
     color: '#ffffff',
     lineHeight: 26,
     textAlign: 'center',
-  },
-  floatingContainer: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 14,
-    alignItems: 'center',
-    zIndex: 50,
-  },
-  macDock: {
-    width: '92%',
-    maxWidth: 760,
-    backgroundColor: 'rgba(236, 239, 234, 0.76)',
-    borderRadius: 25,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.85)',
-    paddingVertical: 7,
-    paddingHorizontal: 8,
-    shadowColor: '#2b362c',
-    shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.16,
-    shadowRadius: 36,
-    elevation: 14,
-    ...(Platform.OS === 'web'
-      ? ({
-          backdropFilter: 'blur(30px) saturate(1.5)',
-          WebkitBackdropFilter: 'blur(30px) saturate(1.5)',
-        } as any)
-      : {}),
-  },
-  dockRail: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 8,
-    paddingHorizontal: 4,
-    paddingVertical: 2,
-  },
-  dockGlyph: {
-    alignItems: 'center',
-    width: 50,
-    position: 'relative',
-    paddingVertical: 2,
-  },
-  dockGlyphActive: {
-    transform: [{ translateY: -3 }],
-  },
-  glyphShape: {
-    width: 48,
-    height: 48,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.75)',
-    shadowColor: '#4a5a4d',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.14,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  glyphShapeActive: {
-    borderColor: '#384b40',
-    borderWidth: 1.6,
-    shadowOpacity: 0.24,
-    shadowRadius: 8,
-  },
-  glyphLabel: {
-    fontSize: 9,
-    fontWeight: '600',
-    color: '#485248',
-    marginTop: 3,
-    textAlign: 'center',
-    maxWidth: 60,
-  },
-  glyphLabelActive: {
-    color: '#1a221c',
-    fontWeight: '700',
-  },
-  activeDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#4c6759',
-    marginTop: 2,
-  },
-  activeDotPlaceholder: {
-    width: 4,
-    height: 4,
-    marginTop: 2,
   },
 });

@@ -15,7 +15,7 @@ export function filterByTab(
     case 'low':
       return emails.filter((m) => m.kind === 'noise');
     case 'drafts':
-      return emails.filter((m) => Boolean(mailDrafts[m.id]));
+      return emails.filter((m) => Boolean(mailDrafts[m.id]) || Boolean(m.draft));
     default:
       return emails;
   }
