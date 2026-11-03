@@ -145,16 +145,23 @@ export const useEmailUiStore = create<EmailUiState>((set, get) => ({
           `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no`
         );
 
-        // Poll for completion or closure of popup
+        // Poll for completion or closure of popup safely (guard against COOP)
         if (popup) {
           const checkTimer = setInterval(async () => {
-            if (popup.closed) {
+            let isClosed = false;
+            try {
+              isClosed = Boolean(popup.closed);
+            } catch (coopErr) {
+              // Browser COOP blocks cross-origin popup.closed check; ignore safely
+            }
+
+            if (isClosed) {
               clearInterval(checkTimer);
               await get().checkOAuthStatus();
               await get().fetchSummary();
               await get().fetchEmails();
             }
-          }, 1000);
+          }, 1500);
           setTimeout(() => clearInterval(checkTimer), 60000);
         }
       } else {
