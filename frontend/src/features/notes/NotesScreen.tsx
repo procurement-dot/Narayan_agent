@@ -15,6 +15,7 @@ import { PillTabs } from '../../shared/components/PillTabs';
 import { NoteItem, NotesCategory } from './notes.types';
 import { colors, radii, spacing, typography } from '../../shared/theme/tokens';
 import { useToast } from '../../shared/components/Toast';
+import { audioRecorder } from './utils/audioRecorder';
 
 const NOTE_TABS: { id: NotesCategory; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -54,14 +55,12 @@ export const NotesScreen: React.FC = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [meetingTitle, setMeetingTitle] = useState('');
   const [meetingArea, setMeetingArea] = useState<NoteItem['area']>('Work');
+  const [recordingLang, setRecordingLang] = useState<'mr-IN' | 'en-IN' | 'hi-IN'>('mr-IN');
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [micActive, setMicActive] = useState(false);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const mediaRecorderRef = useRef<any>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const audioStreamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
     fetchNotes();
@@ -103,29 +102,9 @@ export const NotesScreen: React.FC = () => {
     setIsAnalyzing(false);
     setMicActive(false);
 
-    // Request actual microphone access in browser/environment
-    if (typeof navigator !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        audioStreamRef.current = stream;
-        setMicActive(true);
-
-        const mediaRecorder = new (window as any).MediaRecorder(stream);
-        audioChunksRef.current = [];
-
-        mediaRecorder.ondataavailable = (event: any) => {
-          if (event.data && event.data.size > 0) {
-            audioChunksRef.current.push(event.data);
-          }
-        };
-
-        mediaRecorder.start(250); // Slice every 250ms
-        mediaRecorderRef.current = mediaRecorder;
-      } catch (err) {
-        console.warn('Real microphone not available or permission denied:', err);
-        setMicActive(false);
-      }
-    }
+    // Cross-platform start: Works on Web (MediaRecorder + SpeechRecognition) & Mobile
+    const success = await audioRecorder.start(recordingLang);
+    setMicActive(success);
 
     timerRef.current = setInterval(() => {
       setRecordSeconds((sec) => sec + 1);
@@ -139,68 +118,34 @@ export const NotesScreen: React.FC = () => {
 
     const secondsRecorded = recordSeconds || 5;
 
-    // Helper to send data to backend
-    const sendToBackend = async (audioBase64?: string, mimeType?: string) => {
-      try {
-        const generatedNote = await recordVoiceMeeting(
-          meetingTitle.trim() || `🎙️ ${meetingArea} Discussion & Strategy Sync`,
-          meetingArea,
-          secondsRecorded,
-          audioBase64,
-          mimeType || 'audio/webm'
-        );
-        setIsVoiceOpen(false);
-        setIsAnalyzing(false);
-        setMeetingTitle('');
-        showToast('Meeting MoM & Tasks generated!', 'success');
-        selectNote(generatedNote);
-      } catch (e) {
-        setIsVoiceOpen(false);
-        setIsAnalyzing(false);
-        showToast('Error processing meeting audio', 'error');
-      }
-    };
+    try {
+      // Returns real base64 + live spoken transcript
+      const { audioBase64, rawTranscript, mimeType } = await audioRecorder.stop();
 
-    // If real MediaRecorder was running, extract audio blob & convert to base64
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.onstop = () => {
-        try {
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-          const reader = new FileReader();
-          reader.readAsDataURL(audioBlob);
-          reader.onloadend = () => {
-            const base64Audio = reader.result as string;
-            sendToBackend(base64Audio, 'audio/webm');
-          };
-        } catch (err) {
-          sendToBackend();
-        }
+      const generatedNote = await recordVoiceMeeting(
+        meetingTitle.trim() || `🎙️ ${meetingArea} Discussion & Strategy Sync`,
+        meetingArea,
+        secondsRecorded,
+        audioBase64,
+        mimeType,
+        rawTranscript
+      );
 
-        // Clean up audio tracks
-        if (audioStreamRef.current) {
-          audioStreamRef.current.getTracks().forEach((track) => track.stop());
-          audioStreamRef.current = null;
-        }
-      };
-
-      mediaRecorderRef.current.stop();
-    } else {
-      // Direct fallback
-      sendToBackend();
+      setIsVoiceOpen(false);
+      setIsAnalyzing(false);
+      setMeetingTitle('');
+      showToast('Meeting MoM & Tasks generated with AI!', 'success');
+      selectNote(generatedNote);
+    } catch (e) {
+      setIsVoiceOpen(false);
+      setIsAnalyzing(false);
+      showToast('Error processing meeting audio', 'error');
     }
   };
 
   const cancelVoiceRecording = () => {
     if (timerRef.current) clearInterval(timerRef.current);
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      try {
-        mediaRecorderRef.current.stop();
-      } catch (e) {}
-    }
-    if (audioStreamRef.current) {
-      audioStreamRef.current.getTracks().forEach((track) => track.stop());
-      audioStreamRef.current = null;
-    }
+    audioRecorder.cancel();
     setIsRecording(false);
     setIsVoiceOpen(false);
     setIsAnalyzing(false);
@@ -415,9 +360,9 @@ export const NotesScreen: React.FC = () => {
             {isAnalyzing ? (
               <View style={styles.analyzingBox}>
                 <ActivityIndicator size="large" color={colors.accent} />
-                <Text style={styles.analyzingTitle}>Gemini AI is analyzing audio...</Text>
+                <Text style={styles.analyzingTitle}>AI is analyzing your voice conversation...</Text>
                 <Text style={styles.analyzingSubtitle}>
-                  Listening to conversation, extracting executive summary, key decisions, and action items...
+                  Processing speech, extracting executive summary, key decisions, and action items...
                 </Text>
               </View>
             ) : (
@@ -428,7 +373,7 @@ export const NotesScreen: React.FC = () => {
                     <Text style={styles.recStatusText}>LIVE RECORDING</Text>
                   </View>
                   <Text style={[styles.recAudioInfo, micActive && styles.micActiveText]}>
-                    {micActive ? '🎙️ Mic Active (Recording)' : 'Audio Ready'}
+                    {micActive ? '🎙️ Mic Active' : 'Audio Ready'}
                   </Text>
                 </View>
 
@@ -436,9 +381,37 @@ export const NotesScreen: React.FC = () => {
                   <Text style={styles.timerText}>{formatTimer(recordSeconds)}</Text>
                   <Text style={styles.timerSub}>
                     {micActive
-                      ? 'Speak into your microphone in Marathi, Hindi, or English...'
+                      ? 'Speak into microphone in Marathi, English, or Hindi...'
                       : 'Listening to conversation...'}
                   </Text>
+                </View>
+
+                {/* Spoken Language Selector */}
+                <Text style={styles.fieldLabel}>Spoken Language (बोलण्याची भाषा)</Text>
+                <View style={styles.areaRow}>
+                  {[
+                    { id: 'mr-IN', label: 'मराठी (Marathi)' },
+                    { id: 'en-IN', label: 'English' },
+                    { id: 'hi-IN', label: 'हिंदी (Hindi)' },
+                  ].map((l) => (
+                    <TouchableOpacity
+                      key={l.id}
+                      style={[
+                        styles.areaPill,
+                        recordingLang === l.id && styles.areaPillActive,
+                      ]}
+                      onPress={() => setRecordingLang(l.id as any)}
+                    >
+                      <Text
+                        style={[
+                          styles.areaPillText,
+                          recordingLang === l.id && styles.areaPillTextActive,
+                        ]}
+                      >
+                        {l.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
 
                 <Text style={styles.fieldLabel}>Meeting Title (Optional)</Text>
@@ -513,7 +486,7 @@ export const NotesScreen: React.FC = () => {
               {/* If Transcript exists */}
               {selectedNote?.transcript ? (
                 <View style={styles.transcriptBox}>
-                  <Text style={styles.transcriptKicker}>🎙️ AUDIO TRANSCRIPT</Text>
+                  <Text style={styles.transcriptKicker}>🎙️ AUDIO TRANSCRIPT (बोललेले शब्द)</Text>
                   <Text style={styles.transcriptText}>{selectedNote.transcript}</Text>
                 </View>
               ) : null}

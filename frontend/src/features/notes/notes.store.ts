@@ -21,7 +21,8 @@ interface NotesState {
     area: NoteItem['area'],
     durationSec: number,
     audioBase64?: string,
-    mimeType?: string
+    mimeType?: string,
+    rawTranscript?: string
   ) => Promise<NoteItem>;
   syncTasksToCalendar: (id: string) => Promise<string>;
 }
@@ -96,7 +97,7 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     }
   },
 
-  recordVoiceMeeting: async (title, area, durationSec, audioBase64, mimeType) => {
+  recordVoiceMeeting: async (title, area, durationSec, audioBase64, mimeType, rawTranscript) => {
     try {
       set({ isLoading: true });
       const created = await notesApi.processVoiceMeeting({
@@ -105,6 +106,7 @@ export const useNotesStore = create<NotesState>((set, get) => ({
         audioDurationSeconds: durationSec,
         audioBase64,
         mimeType,
+        rawTranscript,
       });
 
       set((state) => ({
