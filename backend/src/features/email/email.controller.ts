@@ -165,11 +165,12 @@ export const emailController = {
     const { body } = req.body;
     const userId = (req as any).userId || '00000000-0000-0000-0000-000000000001';
 
-    if (!body) {
+    if (body === undefined || body === null) {
       return res.status(400).json({ error: 'Draft body is required' });
     }
 
-    const result = await emailService.saveDraft(id, userId, body);
+    const safeBody = typeof body === 'string' ? body : '';
+    const result = await emailService.saveDraft(id, userId, safeBody);
     res.json({ message: 'Draft saved locally; nothing sent.', result });
   },
 

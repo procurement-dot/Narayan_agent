@@ -55,9 +55,9 @@ Instructions:
    - If "kind" is "noise", do not generate a proposal.
 
 3. Draft Reply:
-   - Write a calm, courteous, professional reply in Narayan's executive voice.
+   - Always write a calm, courteous, professional reply in Narayan's executive voice (2-3 sentences max).
    - Keep it concise, respectful, and clear.
-   - If "noise", leave draftReply empty ("").
+   - For announcements or newsletters, write a polite acknowledgment or expression of interest. Never leave draftReply empty.
 
 Respond ONLY with valid JSON matching this schema:
 {

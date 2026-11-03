@@ -40,10 +40,30 @@ export const EmailDetailSheet: React.FC<EmailDetailSheetProps> = ({
   const [isSending, setIsSending] = useState(false);
 
   useEffect(() => {
-    if (email) {
-      setDraftText(savedDraft !== undefined ? savedDraft : email.draft || '');
+    if (!email) return;
+
+    const initialDraft = savedDraft !== undefined ? savedDraft : email.draft || '';
+    if (initialDraft) {
+      setDraftText(initialDraft);
+      setIsGenerating(false);
+    } else {
+      // Auto-generate AI draft immediately when opening any email that has no draft yet!
+      setDraftText('');
+      setIsGenerating(true);
+      onGenerateDraft(email.id)
+        .then((generated) => {
+          if (generated) {
+            setDraftText(generated);
+          }
+        })
+        .catch((err) => {
+          console.warn('Auto draft generation error:', err);
+        })
+        .finally(() => {
+          setIsGenerating(false);
+        });
     }
-  }, [email, savedDraft]);
+  }, [email?.id, savedDraft]);
 
   if (!email) return null;
 
@@ -54,7 +74,7 @@ export const EmailDetailSheet: React.FC<EmailDetailSheetProps> = ({
     ? 'Meeting'
     : 'Action candidate';
 
-  const handleGenerate = async () => {
+  const handleManualGenerate = async () => {
     try {
       setIsGenerating(true);
       const generated = await onGenerateDraft(email.id);
@@ -67,7 +87,7 @@ export const EmailDetailSheet: React.FC<EmailDetailSheetProps> = ({
   };
 
   const handleSend = async () => {
-    if (!draftText.trim()) return;
+    if (!draftText.trim() || isSending) return;
     try {
       setIsSending(true);
       await onSendReply(email.id, draftText);
@@ -81,23 +101,33 @@ export const EmailDetailSheet: React.FC<EmailDetailSheetProps> = ({
       <TouchableOpacity
         style={styles.archiveBtn}
         onPress={() => onArchive(email.id)}
-        disabled={isSending}
+        disabled={isSending || isGenerating}
       >
         <Text style={styles.archiveBtnText}>Archive</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
-        style={styles.outlineBtn}
-        onPress={() => onSaveDraft(email.id, draftText)}
-        disabled={isSending}
+        style={[
+          styles.outlineBtn,
+          (!draftText.trim() || isGenerating) && styles.disabledBtn,
+        ]}
+        onPress={() => {
+          if (draftText.trim()) {
+            onSaveDraft(email.id, draftText);
+          }
+        }}
+        disabled={isSending || isGenerating || !draftText.trim()}
       >
         <Text style={styles.outlineBtnText}>Save draft</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
-        style={[styles.sendBtn, isSending && styles.sendBtnDisabled]}
+        style={[
+          styles.sendBtn,
+          (isSending || isGenerating || !draftText.trim()) && styles.sendBtnDisabled,
+        ]}
         onPress={handleSend}
-        disabled={isSending || !draftText.trim()}
+        disabled={isSending || isGenerating || !draftText.trim()}
         activeOpacity={0.8}
       >
         {isSending ? (
@@ -146,27 +176,47 @@ export const EmailDetailSheet: React.FC<EmailDetailSheetProps> = ({
           <Text style={styles.replyLabel}>Editable reply — never auto-sent</Text>
           <TouchableOpacity
             style={styles.aiDraftBtn}
-            onPress={handleGenerate}
+            onPress={handleManualGenerate}
             disabled={isGenerating}
             activeOpacity={0.7}
           >
             {isGenerating ? (
-              <ActivityIndicator size="small" color="#355e43" />
+              <View style={styles.generatingRow}>
+                <ActivityIndicator size="small" color="#2a5438" />
+                <Text style={styles.aiDraftBtnText}> Drafting...</Text>
+              </View>
             ) : (
-              <Text style={styles.aiDraftBtnText}>✨ Ask AI to draft</Text>
+              <Text style={styles.aiDraftBtnText}>
+                {draftText ? '✨ Regenerate reply' : '✨ Ask AI to draft'}
+              </Text>
             )}
           </TouchableOpacity>
         </View>
 
-        <TextInput
-          style={styles.textarea}
-          multiline
-          numberOfLines={4}
-          value={draftText}
-          onChangeText={setDraftText}
-          placeholder="Tap '✨ Ask AI to draft' or type your reply here..."
-          placeholderTextColor={TOKENS.colors.inkMuted}
-        />
+        <View style={styles.textareaWrapper}>
+          <TextInput
+            style={styles.textarea}
+            multiline
+            numberOfLines={4}
+            value={draftText}
+            onChangeText={setDraftText}
+            placeholder={
+              isGenerating
+                ? 'AI is drafting a thoughtful reply with Gemini...'
+                : "Type your reply or tap '✨ Regenerate reply'..."
+            }
+            placeholderTextColor={TOKENS.colors.inkMuted}
+            editable={!isGenerating && !isSending}
+          />
+          {isGenerating && (
+            <View style={styles.loadingOverlay}>
+              <ActivityIndicator size="small" color="#355e43" />
+              <Text style={styles.loadingOverlayText}>
+                Gemini 3.5 Flash is drafting a reply...
+              </Text>
+            </View>
+          )}
+        </View>
       </View>
     </BottomSheet>
   );
@@ -249,6 +299,14 @@ const styles = StyleSheet.create({
     color: '#2a5438',
     fontWeight: '600',
   },
+  generatingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  textareaWrapper: {
+    position: 'relative',
+  },
   textarea: {
     backgroundColor: TOKENS.colors.paper,
     borderWidth: 1,
@@ -257,9 +315,27 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 12,
     color: TOKENS.colors.ink,
-    minHeight: 90,
+    minHeight: 95,
     textAlignVertical: 'top',
     fontFamily: FONTS.regular,
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    borderRadius: TOKENS.radius.input,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  loadingOverlayText: {
+    fontSize: 11,
+    color: '#355e43',
+    fontFamily: FONTS.regular,
+    fontWeight: '600',
   },
   footerContainer: {
     flex: 1,
@@ -299,6 +375,9 @@ const styles = StyleSheet.create({
     color: '#33463a',
     fontFamily: FONTS.regular,
   },
+  disabledBtn: {
+    opacity: 0.5,
+  },
   sendBtn: {
     flex: 1.5,
     backgroundColor: '#28382c',
@@ -308,7 +387,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sendBtnDisabled: {
-    opacity: 0.6,
+    opacity: 0.5,
   },
   sendingRow: {
     flexDirection: 'row',

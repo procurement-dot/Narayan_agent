@@ -12,6 +12,10 @@ export const pool = new Pool({
   idleTimeoutMillis: 30000,
 });
 
+pool.on('error', (err) => {
+  console.warn('[PostgreSQL Pool Notice]: Unexpected idle client error (recovering):', err.message);
+});
+
 export const db = {
   async query<T = any>(text: string, params?: any[]): Promise<T[]> {
     const res = await pool.query(text, params);
