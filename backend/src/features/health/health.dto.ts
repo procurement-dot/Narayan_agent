@@ -75,3 +75,68 @@ export const UploadDocumentDto = z.object({
   test_date: z.string().optional(),
 });
 export type UploadDocumentInput = z.infer<typeof UploadDocumentDto>;
+
+// AI Lab Report Parser DTO
+export const AnalyzeReportDto = z.object({
+  person_name: PersonNameSchema.default('Self'),
+  title: z.string().default('Lab Diagnostic Report'),
+  file_name: z.string().optional(),
+  file_base64: z.string().min(1, 'File base64 data is required'),
+  mime_type: z.string().default('image/jpeg'),
+  test_date: z.string().optional(),
+});
+export type AnalyzeReportInput = z.infer<typeof AnalyzeReportDto>;
+
+// Smart Plate / Food Scanner DTO
+export const AnalyzeMealDto = z.object({
+  person_name: PersonNameSchema.default('Self'),
+  meal_title: z.string().default('Nutrition Plate'),
+  image_base64: z.string().min(1, 'Food image base64 data is required'),
+  mime_type: z.string().default('image/jpeg'),
+});
+export type AnalyzeMealInput = z.infer<typeof AnalyzeMealDto>;
+
+// Wearable Sync & Connect DTOs
+export const ConnectWearableDto = z.object({
+  person_name: PersonNameSchema.default('Self'),
+  brand: z.string().default('Garmin'),
+  device_name: z.string().min(2, 'Device name must have at least 2 characters'),
+  connection_type: z.enum(['bluetooth_ble', 'health_connect', 'apple_health', 'cloud_sync']).default('bluetooth_ble'),
+  battery_level: z.number().int().min(1).max(100).optional(),
+});
+export type ConnectWearableInput = z.infer<typeof ConnectWearableDto>;
+
+export const DisconnectWearableDto = z.object({
+  person_name: PersonNameSchema.default('Self'),
+});
+export type DisconnectWearableInput = z.infer<typeof DisconnectWearableDto>;
+
+export const SyncWearableDto = z.object({
+  person_name: PersonNameSchema.default('Self'),
+  source: z.string().default('Smartwatch'),
+  simulate_active_run: z.boolean().default(true),
+});
+export type SyncWearableInput = z.infer<typeof SyncWearableDto>;
+
+// Phone Sensor DTOs (No-Watch Standalone Mode)
+export const SyncPhoneStepsDto = z.object({
+  person_name: PersonNameSchema.default('Self'),
+  steps: z.number().int().min(0),
+});
+export type SyncPhoneStepsInput = z.infer<typeof SyncPhoneStepsDto>;
+
+export const MeasurePulseDto = z.object({
+  person_name: PersonNameSchema.default('Self'),
+  measured_bpm: z.number().int().min(40).max(220),
+  measurement_type: z.string().default('camera_ppg'),
+});
+export type MeasurePulseInput = z.infer<typeof MeasurePulseDto>;
+
+export const RecordPhoneRunDto = z.object({
+  person_name: PersonNameSchema.default('Self'),
+  distance_km: z.number().min(0),
+  duration_seconds: z.number().int().min(1),
+  pace: z.string().default('5:10/km'),
+  calories: z.number().int().optional(),
+});
+export type RecordPhoneRunInput = z.infer<typeof RecordPhoneRunDto>;

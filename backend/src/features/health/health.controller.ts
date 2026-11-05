@@ -1,11 +1,19 @@
 import { Request, Response } from 'express';
 import { healthService } from './health.service.js';
 import {
+  AnalyzeMealDto,
+  AnalyzeReportDto,
+  ConnectWearableDto,
   CreateEventDto,
   CreateGoalDto,
+  DisconnectWearableDto,
   LogVitalsDto,
+  MeasurePulseDto,
   PersonNameSchema,
+  RecordPhoneRunDto,
   SaveJournalDto,
+  SyncPhoneStepsDto,
+  SyncWearableDto,
   UpdateGoalDto,
   UpdateTrainingSessionDto,
   UploadDocumentDto,
@@ -30,6 +38,116 @@ export const healthController = {
       res.status(201).json({ success: true, data: record });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });
+    }
+  },
+
+  // Wearables Live Telemetry Sync
+  async syncWearables(req: Request, res: Response) {
+    try {
+      const parsed = SyncWearableDto.parse(req.body);
+      const result = await healthService.syncWearables(parsed);
+      res.json({ success: true, data: result });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  },
+
+  // Pair & Connect Wearable
+  async connectWearable(req: Request, res: Response) {
+    try {
+      const parsed = ConnectWearableDto.parse(req.body);
+      const result = await healthService.connectWearable(parsed);
+      res.json({ success: true, data: result });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  },
+
+  // Disconnect Wearable
+  async disconnectWearable(req: Request, res: Response) {
+    try {
+      const parsed = DisconnectWearableDto.parse(req.body);
+      const result = await healthService.disconnectWearable(parsed);
+      res.json({ success: true, data: result });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  },
+
+  // Scan Nearby Bluetooth BLE Devices
+  async scanNearbyWearables(req: Request, res: Response) {
+    try {
+      const brand = req.query.brand as string | undefined;
+      const devices = await healthService.scanNearbyBluetoothDevices(brand);
+      res.json({ success: true, data: devices });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  },
+
+  // Phone Pedometer Sync
+  async syncPhoneSteps(req: Request, res: Response) {
+    try {
+      const parsed = SyncPhoneStepsDto.parse(req.body);
+      const result = await healthService.syncPhoneSteps(parsed);
+      res.json({ success: true, data: result });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  },
+
+  // Phone Camera Pulse Measure
+  async measurePulse(req: Request, res: Response) {
+    try {
+      const parsed = MeasurePulseDto.parse(req.body);
+      const result = await healthService.measurePulse(parsed);
+      res.json({ success: true, data: result });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  },
+
+  // Phone GPS Run Session
+  async recordPhoneRun(req: Request, res: Response) {
+    try {
+      const parsed = RecordPhoneRunDto.parse(req.body);
+      const result = await healthService.recordPhoneRun(parsed);
+      res.json({ success: true, data: result });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  },
+
+  // AI Multimodal Lab Report Analysis
+  async analyzeLabReport(req: Request, res: Response) {
+    try {
+      const parsed = AnalyzeReportDto.parse(req.body);
+      const document = await healthService.analyzeLabReport(parsed);
+      res.status(201).json({ success: true, data: document });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  },
+
+  // AI Multimodal Meal Photo Analysis
+  async analyzeMealPlate(req: Request, res: Response) {
+    try {
+      const parsed = AnalyzeMealDto.parse(req.body);
+      const meal = await healthService.analyzeMealPlate(parsed);
+      res.status(201).json({ success: true, data: meal });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  },
+
+  async getMealLogs(req: Request, res: Response) {
+    try {
+      const personParsed = PersonNameSchema.safeParse(req.query.person);
+      const person = personParsed.success ? personParsed.data : 'Self';
+      const meals = await healthService.getMealLogs(person);
+      res.json({ success: true, data: meals });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
     }
   },
 
