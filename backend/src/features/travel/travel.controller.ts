@@ -1,4 +1,6 @@
+
 import { Request, Response } from 'express';
+
 import { travelService } from './travel.service.js';
 import {
   createTripSchema,

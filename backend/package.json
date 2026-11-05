@@ -8,7 +8,9 @@
     "prestart": "npm run build",
     "start": "node dist/server.js",
     "dev": "tsx watch src/server.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:growth": "tsx src/test_growth.ts",
+    "test:kickstart": "tsx src/test_kickstart.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
