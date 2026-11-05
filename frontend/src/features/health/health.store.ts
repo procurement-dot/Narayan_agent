@@ -5,11 +5,15 @@ import {
   HealthGoal,
   HealthTab,
   JournalEntry,
+  MealLog,
   PersonName,
   SportsEvent,
   TrainingDay,
   VitalsSummary,
+  WearableStatus,
   WeeklyRhythmBar,
+  TrackingSource,
+  DiscoveredBleDevice,
 } from './health.types';
 import { HEALTH_GOALS, SPORTS_EVENTS, TRAINING_PLAN } from './health.mock';
 import { healthApi } from './api/health.api';
@@ -20,6 +24,9 @@ interface HealthState {
   selectedPerson: PersonName;
   isLoading: boolean;
   isRefreshing: boolean;
+  isSyncingWearable: boolean;
+  isAnalyzingReport: boolean;
+  isAnalyzingMeal: boolean;
   error: string | null;
 
   vitals: VitalsSummary;
@@ -30,6 +37,8 @@ interface HealthState {
   events: SportsEvent[];
   savedJournals: JournalEntry[];
   documents: DocumentItem[];
+  meals: MealLog[];
+  wearableStatus: WearableStatus;
 
   journalText: string;
 
@@ -45,6 +54,43 @@ interface HealthState {
   updateGoalProgress: (id: string, newProgress: number) => Promise<void>;
   addGoal: (name: string, date: string, category: string) => Promise<void>;
   uploadDocument: (title: string, docType?: string) => Promise<void>;
+
+  // Wearables & AI Multimodal Actions
+  isConnectModalOpen: boolean;
+  isPairingWearable: boolean;
+  isScanningDevices: boolean;
+  discoveredDevices: DiscoveredBleDevice[];
+
+  openConnectModal: () => void;
+  closeConnectModal: () => void;
+  scanDevices: (brand?: string) => Promise<void>;
+  pairAndConnectDevice: (
+    brand: string,
+    deviceName: string,
+    connectionType?: 'bluetooth_ble' | 'health_connect' | 'apple_health' | 'cloud_sync'
+  ) => Promise<string>;
+  disconnectWearableDevice: () => Promise<string>;
+  syncWearableData: () => Promise<string>;
+  uploadAndAnalyzeReport: (
+    file: { name: string; base64: string; mimeType: string },
+    title?: string
+  ) => Promise<DocumentItem>;
+  scanAndAnalyzeMeal: (
+    file: { name: string; base64: string; mimeType: string },
+    mealTitle?: string
+  ) => Promise<MealLog>;
+
+  // Phone Sensors (No Watch Mode) State & Actions
+  trackingSource: TrackingSource;
+  phoneSteps: number;
+  isMeasuringPulse: boolean;
+  lastCameraBpm: number | null;
+  isRecordingPhoneRun: boolean;
+
+  setTrackingSource: (source: TrackingSource) => void;
+  syncPhoneSteps: (addedSteps?: number) => Promise<string>;
+  measureCameraPulse: (bpm: number) => Promise<string>;
+  recordPhoneRun: (distance_km: number, duration_seconds: number, pace?: string) => Promise<string>;
 }
 
 export const useHealthStore = create<HealthState>((set, get) => ({
@@ -52,52 +98,57 @@ export const useHealthStore = create<HealthState>((set, get) => ({
   selectedPerson: 'Self',
   isLoading: false,
   isRefreshing: false,
+  isSyncingWearable: false,
+  isAnalyzingReport: false,
+  isAnalyzingMeal: false,
+  isConnectModalOpen: false,
+  isPairingWearable: false,
+  isScanningDevices: false,
+  discoveredDevices: [],
   error: null,
 
   vitals: {
-    resting_hr: 52,
-    sleep_duration_minutes: 445,
-    recovery_score: 88,
-    steps_count: 8420,
-    hydration_liters: 3.2,
-    energy_level: 'High',
-    source: 'Garmin Venu 2 Plus',
+    resting_hr: 0,
+    sleep_duration_minutes: 0,
+    recovery_score: 0,
+    steps_count: 0,
+    hydration_liters: 0,
+    energy_level: 'Pending Data',
+    source: 'No Telemetry Yet',
   },
   weeklyRhythm: [
-    { day: 'M', load: 55 },
-    { day: 'T', load: 68 },
-    { day: 'W', load: 85 },
-    { day: 'T', load: 45 },
-    { day: 'F', load: 70 },
-    { day: 'S', load: 92 },
-    { day: 'S', load: 40 },
+    { day: 'M', load: 0 },
+    { day: 'T', load: 0 },
+    { day: 'W', load: 0 },
+    { day: 'T', load: 0 },
+    { day: 'F', load: 0 },
+    { day: 'S', load: 0 },
+    { day: 'S', load: 0 },
   ],
   coachSuggestion: {
-    title: 'Tempo interval session',
-    description: 'Recovery is optimal. Good day for 8 km including 4 × 1 km at 4:50/km pace.',
-    category: 'COACH SUGGESTION',
+    title: 'Awaiting Health Signals',
+    description: 'Record steps, measure pulse with camera, or pair your watch to calculate training readiness.',
+    category: 'READINESS STATUS',
   },
   goals: HEALTH_GOALS,
   plan: TRAINING_PLAN,
   events: SPORTS_EVENTS,
-  savedJournals: [
-    {
-      id: 'init-j1',
-      date: 'Yesterday',
-      text: 'Legs felt fresh after the easy 6k. Good recovery sleep (7h 40m). Ready for intervals.',
-      ai_coach_reflection: 'Great base! Keep cadence light and hydrate well prior to high intensity tempo runs.',
-    },
-  ],
-  documents: [
-    {
-      id: 'doc-init',
-      title: 'Annual Comprehensive Lab Panel (Lipid, HbA1c, Vit D)',
-      doc_type: 'Blood Test',
-      file_url: 'https://storage.nryn.internal/reports/annual-panel-2026.pdf',
-      extracted_summary: 'All markers optimal. Resting glucose 88 mg/dL, HbA1c 5.2%, Vit D3 at 44 ng/mL.',
-      test_date: '18 Oct 2026',
-    },
-  ],
+  savedJournals: [],
+  documents: [],
+  meals: [],
+  wearableStatus: {
+    connected: false,
+    brand: 'None',
+    device_name: 'No Watch Connected',
+    battery_level: 0,
+    last_synced: 'Never',
+    sync_mode: 'Disconnected',
+  },
+  trackingSource: 'watch',
+  phoneSteps: 0,
+  isMeasuringPulse: false,
+  lastCameraBpm: null,
+  isRecordingPhoneRun: false,
   journalText: '',
 
   setTab: (tab) => set({ currentTab: tab }),
@@ -115,13 +166,15 @@ export const useHealthStore = create<HealthState>((set, get) => ({
       const data = await healthApi.getDashboard(targetPerson);
       set({
         vitals: data.vitals,
-        weeklyRhythm: data.weeklyRhythm.length > 0 ? data.weeklyRhythm : get().weeklyRhythm,
+        weeklyRhythm: data.weeklyRhythm || get().weeklyRhythm,
         coachSuggestion: data.coachSuggestion,
-        goals: data.goals.length > 0 ? data.goals : get().goals,
-        plan: data.trainingSessions.length > 0 ? data.trainingSessions : get().plan,
-        events: data.events.length > 0 ? data.events : get().events,
-        savedJournals: data.journals.length > 0 ? data.journals : get().savedJournals,
-        documents: data.documents.length > 0 ? data.documents : get().documents,
+        goals: data.goals?.length ? data.goals : get().goals,
+        plan: data.trainingSessions?.length ? data.trainingSessions : get().plan,
+        events: data.events || [],
+        savedJournals: data.journals || [],
+        documents: data.documents || [],
+        meals: data.meals || [],
+        wearableStatus: data.wearableStatus || get().wearableStatus,
         isLoading: false,
       });
     } catch (err: any) {
@@ -136,17 +189,151 @@ export const useHealthStore = create<HealthState>((set, get) => ({
       const data = await healthApi.getDashboard(get().selectedPerson);
       set({
         vitals: data.vitals,
-        weeklyRhythm: data.weeklyRhythm.length > 0 ? data.weeklyRhythm : get().weeklyRhythm,
+        weeklyRhythm: data.weeklyRhythm || get().weeklyRhythm,
         coachSuggestion: data.coachSuggestion,
-        goals: data.goals.length > 0 ? data.goals : get().goals,
-        plan: data.trainingSessions.length > 0 ? data.trainingSessions : get().plan,
-        events: data.events.length > 0 ? data.events : get().events,
-        savedJournals: data.journals.length > 0 ? data.journals : get().savedJournals,
-        documents: data.documents.length > 0 ? data.documents : get().documents,
+        goals: data.goals?.length ? data.goals : get().goals,
+        plan: data.trainingSessions?.length ? data.trainingSessions : get().plan,
+        events: data.events || [],
+        savedJournals: data.journals || [],
+        documents: data.documents || [],
+        meals: data.meals || [],
+        wearableStatus: data.wearableStatus || get().wearableStatus,
         isRefreshing: false,
       });
     } catch (err: any) {
       set({ isRefreshing: false });
+    }
+  },
+
+  // Wearables Connection & Pairing Actions
+  openConnectModal: () => {
+    set({ isConnectModalOpen: true });
+    get().scanDevices();
+  },
+
+  closeConnectModal: () => set({ isConnectModalOpen: false }),
+
+  scanDevices: async (brand) => {
+    set({ isScanningDevices: true });
+    try {
+      const list = await healthApi.scanNearbyDevices(brand);
+      set({ discoveredDevices: list, isScanningDevices: false });
+    } catch (e) {
+      set({ isScanningDevices: false });
+    }
+  },
+
+  pairAndConnectDevice: async (brand, deviceName, connectionType = 'bluetooth_ble') => {
+    const { selectedPerson } = get();
+    set({ isPairingWearable: true });
+    try {
+      const res = await healthApi.connectWearable({
+        person_name: selectedPerson,
+        brand,
+        device_name: deviceName,
+        connection_type: connectionType,
+      });
+
+      set({
+        wearableStatus: res.wearable,
+        vitals: res.vitals,
+        isPairingWearable: false,
+        isConnectModalOpen: false,
+      });
+      return res.message;
+    } catch (err: any) {
+      set({ isPairingWearable: false });
+      throw err;
+    }
+  },
+
+  disconnectWearableDevice: async () => {
+    const { selectedPerson } = get();
+    try {
+      const res = await healthApi.disconnectWearable(selectedPerson);
+      set({ wearableStatus: res.wearable });
+      return res.message;
+    } catch (err: any) {
+      throw err;
+    }
+  },
+
+  // Wearables Real-time Ingestion Sync
+  syncWearableData: async () => {
+    const { selectedPerson, wearableStatus } = get();
+    set({ isSyncingWearable: true });
+    try {
+      const sourceName = wearableStatus.connected ? wearableStatus.device_name : 'Smartwatch';
+      const res = await healthApi.syncWearables({
+        person_name: selectedPerson,
+        source: sourceName,
+        simulate_active_run: true,
+      });
+
+      set((state) => ({
+        vitals: res.vitals,
+        wearableStatus: {
+          ...state.wearableStatus,
+          last_synced: 'Just now',
+          battery_level: Math.max(10, state.wearableStatus.battery_level - 1),
+        },
+        plan: res.updatedSession
+          ? state.plan.map((s) => (s.id === res.updatedSession.id ? res.updatedSession : s))
+          : state.plan,
+        isSyncingWearable: false,
+      }));
+
+      return res.message;
+    } catch (err: any) {
+      set({ isSyncingWearable: false });
+      throw err;
+    }
+  },
+
+  // Lab Report Real Upload & Multimodal AI Analysis
+  uploadAndAnalyzeReport: async (file, title) => {
+    const { selectedPerson, documents } = get();
+    set({ isAnalyzingReport: true });
+    try {
+      const doc = await healthApi.analyzeLabReport({
+        person_name: selectedPerson,
+        title: title || file.name || 'Medical Diagnostic Report',
+        file_name: file.name,
+        file_base64: file.base64,
+        mime_type: file.mimeType,
+      });
+
+      set({
+        documents: [doc, ...documents],
+        isAnalyzingReport: false,
+      });
+      return doc;
+    } catch (err: any) {
+      set({ isAnalyzingReport: false });
+      throw err;
+    }
+  },
+
+  // Food Photo Real Snap & Multimodal AI Analysis
+  scanAndAnalyzeMeal: async (file, mealTitle) => {
+    const { selectedPerson, meals } = get();
+    set({ isAnalyzingMeal: true });
+    try {
+      const meal = await healthApi.analyzeMealPlate({
+        person_name: selectedPerson,
+        meal_title: mealTitle || 'Fresh Meal Plate',
+        image_base64: file.base64,
+        mime_type: file.mimeType,
+      });
+
+      set({
+        meals: [meal, ...meals],
+        isAnalyzingMeal: false,
+      });
+      return meal;
+    } catch (err: any) {
+      set({ isAnalyzingMeal: false });
+      throw err;
     }
   },
 
@@ -155,7 +342,6 @@ export const useHealthStore = create<HealthState>((set, get) => ({
     const trimmed = journalText.trim();
     if (!trimmed) return;
 
-    // Optimistic entry
     const tempEntry: JournalEntry = {
       id: `local-${Date.now()}`,
       date: 'Today',
@@ -173,7 +359,6 @@ export const useHealthStore = create<HealthState>((set, get) => ({
         person_name: selectedPerson,
         text: trimmed,
       });
-      // Update with server entry and AI insight
       set((state) => ({
         savedJournals: state.savedJournals.map((j) =>
           j.id === tempEntry.id ? { ...saved, date: 'Today' } : j
@@ -219,7 +404,6 @@ export const useHealthStore = create<HealthState>((set, get) => ({
     const title = session?.workout || coachSuggestion.title;
     const distance = session?.distance || '8 km interval session';
 
-    // 1. Cross-module Calendar Store Integration
     useCalendarStore.getState().addEvent({
       title,
       subtitle: `${distance} · Marathon 12-wk build`,
@@ -230,7 +414,6 @@ export const useHealthStore = create<HealthState>((set, get) => ({
       detail: 'Added from Health module Coach suggestion',
     });
 
-    // 2. Sync to Backend
     if (session?.id) {
       try {
         await healthApi.syncSessionToCalendar(session.id);
@@ -306,6 +489,76 @@ export const useHealthStore = create<HealthState>((set, get) => ({
       }));
     } catch (e) {
       console.warn('Failed to sync document to server:', e);
+    }
+  },
+
+  // Phone Sensors Standalone Actions
+  setTrackingSource: (trackingSource) => set({ trackingSource }),
+
+  syncPhoneSteps: async (addedSteps = 1000) => {
+    const { phoneSteps, selectedPerson } = get();
+    const newTotal = phoneSteps + addedSteps;
+    set({ phoneSteps: newTotal });
+    try {
+      const res = await healthApi.syncPhoneSteps(newTotal, selectedPerson);
+      set((state) => ({ vitals: res.vitals }));
+      return res.message;
+    } catch (e: any) {
+      return `Updated steps to ${newTotal.toLocaleString()}`;
+    }
+  },
+
+  measureCameraPulse: async (bpm) => {
+    const { selectedPerson } = get();
+    set({ isMeasuringPulse: true });
+    try {
+      const res = await healthApi.measureCameraPulse(bpm, selectedPerson);
+      set((state) => ({
+        vitals: res.vitals,
+        lastCameraBpm: bpm,
+        isMeasuringPulse: false,
+      }));
+      return res.message;
+    } catch (e) {
+      set({ isMeasuringPulse: false });
+      throw e;
+    }
+  },
+
+  recordPhoneRun: async (distance_km, duration_seconds, pace = '5:10/km') => {
+    const { selectedPerson } = get();
+    set({ isRecordingPhoneRun: true });
+    try {
+      const res = await healthApi.recordPhoneRun(
+        {
+          distance_km,
+          duration_seconds,
+          pace,
+        },
+        selectedPerson
+      );
+
+      if (res.updatedSession) {
+        set((state) => ({
+          plan: state.plan.map((s) => (s.id === res.updatedSession.id ? res.updatedSession : s)),
+        }));
+      }
+
+      useCalendarStore.getState().addEvent({
+        title: 'Phone GPS Run',
+        subtitle: `${res.run.distance} in ${res.run.duration} (${res.run.pace})`,
+        start: '07:00',
+        end: '07:45',
+        cat: 'green',
+        kind: 'health',
+        detail: 'Recorded directly via Phone GPS motion tracker',
+      });
+
+      set({ isRecordingPhoneRun: false });
+      return res.message;
+    } catch (e) {
+      set({ isRecordingPhoneRun: false });
+      throw e;
     }
   },
 }));

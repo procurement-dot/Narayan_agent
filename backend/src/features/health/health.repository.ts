@@ -82,6 +82,14 @@ export interface JournalRecord {
   created_at: string;
 }
 
+export interface Biomarker {
+  name: string;
+  value: string;
+  unit: string;
+  status: 'Optimal' | 'Normal' | 'High' | 'Low' | 'Alert';
+  reference_range?: string;
+}
+
 export interface DocumentRecord {
   id: string;
   person_name: PersonName;
@@ -89,8 +97,35 @@ export interface DocumentRecord {
   doc_type: string;
   file_url?: string;
   extracted_summary?: string;
+  biomarkers?: Biomarker[];
+  raw_analysis?: any;
   test_date: string;
   created_at: string;
+}
+
+export interface MealLogRecord {
+  id: string;
+  person_name: PersonName;
+  meal_title: string;
+  image_url?: string;
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fats_g: number;
+  fiber_g: number;
+  detected_items: string[];
+  micronutrients: string[];
+  runner_insight: string;
+  logged_at: string;
+}
+
+export interface WearableDeviceState {
+  connected: boolean;
+  brand: string;
+  device_name: string;
+  battery_level: number;
+  last_synced: string;
+  sync_mode: string;
 }
 
 export interface ProfileRecord {
@@ -100,6 +135,7 @@ export interface ProfileRecord {
   hydration_target_liters: number;
   recovery_baseline: number;
   blood_group: string;
+  connected_wearable?: WearableDeviceState;
 }
 
 interface HealthDatabaseState {
@@ -110,6 +146,7 @@ interface HealthDatabaseState {
   events: SportsEventRecord[];
   journals: JournalRecord[];
   documents: DocumentRecord[];
+  meals: MealLogRecord[];
 }
 
 // Consistent data directory location
@@ -127,125 +164,69 @@ function ensureDataDir() {
 
 function getDefaultHealthData(): HealthDatabaseState {
   const now = new Date().toISOString();
-  const todayStr = new Date().toISOString().split('T')[0];
 
   return {
     profiles: {
       Self: {
         person_name: 'Self',
-        resting_hr_baseline: 52,
-        sleep_target_minutes: 450,
-        hydration_target_liters: 3.2,
-        recovery_baseline: 88,
+        resting_hr_baseline: 0,
+        sleep_target_minutes: 480,
+        hydration_target_liters: 3.0,
+        recovery_baseline: 0,
         blood_group: 'O+',
+        connected_wearable: {
+          connected: false,
+          brand: 'None',
+          device_name: 'No Watch Connected',
+          battery_level: 0,
+          last_synced: 'Never',
+          sync_mode: 'Disconnected',
+        },
       },
       Neha: {
         person_name: 'Neha',
-        resting_hr_baseline: 64,
+        resting_hr_baseline: 0,
         sleep_target_minutes: 480,
-        hydration_target_liters: 2.6,
-        recovery_baseline: 92,
+        hydration_target_liters: 2.5,
+        recovery_baseline: 0,
         blood_group: 'B+',
+        connected_wearable: {
+          connected: false,
+          brand: 'None',
+          device_name: 'No Watch Connected',
+          battery_level: 0,
+          last_synced: 'Never',
+          sync_mode: 'Disconnected',
+        },
       },
       Prayan: {
         person_name: 'Prayan',
-        resting_hr_baseline: 72,
+        resting_hr_baseline: 0,
         sleep_target_minutes: 540,
-        hydration_target_liters: 2.2,
-        recovery_baseline: 95,
+        hydration_target_liters: 2.0,
+        recovery_baseline: 0,
         blood_group: 'O+',
+        connected_wearable: {
+          connected: false,
+          brand: 'None',
+          device_name: 'No Watch Connected',
+          battery_level: 0,
+          last_synced: 'Never',
+          sync_mode: 'Disconnected',
+        },
       },
     },
-    vitals: [
-      {
-        id: 'vit-1',
-        person_name: 'Self',
-        log_date: todayStr,
-        resting_hr: 52,
-        sleep_duration_minutes: 445, // 7h 25m
-        recovery_score: 88,
-        steps_count: 8420,
-        hydration_liters: 3.2,
-        energy_level: 'High',
-        source: 'Garmin Venu 2 Plus',
-        created_at: now,
-      },
-      {
-        id: 'vit-2',
-        person_name: 'Neha',
-        log_date: todayStr,
-        resting_hr: 63,
-        sleep_duration_minutes: 465, // 7h 45m
-        recovery_score: 91,
-        steps_count: 6780,
-        hydration_liters: 2.5,
-        energy_level: 'Steady',
-        source: 'Apple Health',
-        created_at: now,
-      },
-      {
-        id: 'vit-3',
-        person_name: 'Prayan',
-        log_date: todayStr,
-        resting_hr: 70,
-        sleep_duration_minutes: 540, // 9h 00m
-        recovery_score: 96,
-        steps_count: 10450,
-        hydration_liters: 2.2,
-        energy_level: 'Very Energetic',
-        source: 'Kids Garmin Band',
-        created_at: now,
-      },
-    ],
+    vitals: [],
     goals: [
       {
         id: 'g1',
         user_id: '00000000-0000-0000-0000-000000000000',
         name: 'Marathon 42.2 km',
-        date: '13 Dec 2026',
-        category: '12-week build',
-        progress: 72,
+        date: '12-Week Target',
+        category: 'Marathon build',
+        progress: 0,
         target_metric: '42.195 km',
-        current_metric: '32 km long run',
-        is_active: true,
-        created_at: now,
-        updated_at: now,
-      },
-      {
-        id: 'g2',
-        user_id: '00000000-0000-0000-0000-000000000000',
-        name: 'Half marathon 1:45',
-        date: 'Next target',
-        category: 'Speed endurance',
-        progress: 51,
-        target_metric: '1h 45m',
-        current_metric: '1h 52m',
-        is_active: true,
-        created_at: now,
-        updated_at: now,
-      },
-      {
-        id: 'g3',
-        user_id: '00000000-0000-0000-0000-000000000000',
-        name: 'Swim technique',
-        date: 'Weekly',
-        category: 'Consistent practice',
-        progress: 63,
-        target_metric: '2000m continuous',
-        current_metric: '1400m',
-        is_active: true,
-        created_at: now,
-        updated_at: now,
-      },
-      {
-        id: 'g4',
-        user_id: '00000000-0000-0000-0000-000000000000',
-        name: 'Strength + mobility',
-        date: '10 pull-ups · 100 push-ups',
-        category: 'Build gradually',
-        progress: 42,
-        target_metric: '10 pull-ups',
-        current_metric: '7 pull-ups',
+        current_metric: '0 km',
         is_active: true,
         created_at: now,
         updated_at: now,
@@ -255,38 +236,38 @@ function getDefaultHealthData(): HealthDatabaseState {
       {
         id: 'ts-1',
         user_id: '00000000-0000-0000-0000-000000000000',
-        week_number: 4,
+        week_number: 1,
         day_name: 'Mon',
-        workout: 'Easy Recovery Run',
-        distance: '6 km @ 6:15/km',
-        status: 'completed',
+        workout: 'Easy Aerobic Base Run',
+        distance: '5 km @ easy conversational pace',
+        status: 'upcoming',
         scheduled_time: '06:30',
         intensity: 'Low',
-        synced_to_calendar: true,
+        synced_to_calendar: false,
         created_at: now,
         updated_at: now,
       },
       {
         id: 'ts-2',
         user_id: '00000000-0000-0000-0000-000000000000',
-        week_number: 4,
+        week_number: 1,
         day_name: 'Tue',
-        workout: 'Strength & Core',
-        distance: '45 mins circuit',
-        status: 'completed',
+        workout: 'Strength & Core Conditioning',
+        distance: '40 mins bodyweight & stability',
+        status: 'upcoming',
         scheduled_time: '07:00',
         intensity: 'Moderate',
-        synced_to_calendar: true,
+        synced_to_calendar: false,
         created_at: now,
         updated_at: now,
       },
       {
         id: 'ts-3',
         user_id: '00000000-0000-0000-0000-000000000000',
-        week_number: 4,
+        week_number: 1,
         day_name: 'Wed',
-        workout: 'Tempo Interval Session',
-        distance: '8 km (4x1km @ 4:50)',
+        workout: 'Interval Cadence Building',
+        distance: '6 km (5x800m fast strides)',
         status: 'today',
         scheduled_time: '06:30',
         intensity: 'High',
@@ -297,10 +278,10 @@ function getDefaultHealthData(): HealthDatabaseState {
       {
         id: 'ts-4',
         user_id: '00000000-0000-0000-0000-000000000000',
-        week_number: 4,
+        week_number: 1,
         day_name: 'Thu',
-        workout: 'Rest & Mobility',
-        distance: 'Stretching & foam roller',
+        workout: 'Rest & Active Mobility',
+        distance: 'Stretching & foam rolling',
         status: 'upcoming',
         scheduled_time: '07:30',
         intensity: 'Recovery',
@@ -311,10 +292,10 @@ function getDefaultHealthData(): HealthDatabaseState {
       {
         id: 'ts-5',
         user_id: '00000000-0000-0000-0000-000000000000',
-        week_number: 4,
+        week_number: 1,
         day_name: 'Fri',
-        workout: 'Aerobic Base Run',
-        distance: '7 km @ 6:00/km',
+        workout: 'Aerobic Foundation Run',
+        distance: '6 km @ steady aerobic pace',
         status: 'upcoming',
         scheduled_time: '06:30',
         intensity: 'Moderate',
@@ -325,10 +306,10 @@ function getDefaultHealthData(): HealthDatabaseState {
       {
         id: 'ts-6',
         user_id: '00000000-0000-0000-0000-000000000000',
-        week_number: 4,
+        week_number: 1,
         day_name: 'Sat',
-        workout: 'Long Run',
-        distance: '18 km progressive',
+        workout: 'Long Endurance Run',
+        distance: '12 km continuous endurance',
         status: 'upcoming',
         scheduled_time: '06:00',
         intensity: 'High Endurance',
@@ -339,10 +320,10 @@ function getDefaultHealthData(): HealthDatabaseState {
       {
         id: 'ts-7',
         user_id: '00000000-0000-0000-0000-000000000000',
-        week_number: 4,
+        week_number: 1,
         day_name: 'Sun',
-        workout: 'Gentle Walk & Swim',
-        distance: 'Active recovery',
+        workout: 'Gentle Walk & Recovery',
+        distance: '45 mins light active recovery',
         status: 'upcoming',
         scheduled_time: '08:00',
         intensity: 'Low',
@@ -351,96 +332,10 @@ function getDefaultHealthData(): HealthDatabaseState {
         updated_at: now,
       },
     ],
-    events: [
-      {
-        id: 'se1',
-        user_id: '00000000-0000-0000-0000-000000000000',
-        name: 'Pune Half Marathon',
-        sport: 'Running',
-        region: 'Local',
-        date: '08 DEC',
-        registered: true,
-        target_time: '1h 48m',
-        created_at: now,
-      },
-      {
-        id: 'se2',
-        user_id: '00000000-0000-0000-0000-000000000000',
-        name: 'Tata Mumbai Marathon',
-        sport: 'Running',
-        region: 'India',
-        date: '17 JAN',
-        registered: true,
-        target_time: '3h 55m',
-        created_at: now,
-      },
-      {
-        id: 'se3',
-        user_id: '00000000-0000-0000-0000-000000000000',
-        name: 'Goa Ironman 70.3',
-        sport: 'Triathlon',
-        region: 'India',
-        date: '08 FEB',
-        registered: false,
-        target_time: '5h 45m',
-        created_at: now,
-      },
-      {
-        id: 'se4',
-        user_id: '00000000-0000-0000-0000-000000000000',
-        name: 'Berlin Marathon',
-        sport: 'Running',
-        region: 'International',
-        date: '27 SEP',
-        registered: false,
-        target_time: '3h 45m',
-        created_at: now,
-      },
-    ],
-    journals: [
-      {
-        id: 'j-1',
-        person_name: 'Self',
-        date: 'Yesterday',
-        text: 'Legs felt fresh after the easy 6k. Good recovery sleep (7h 40m). Ready for intervals.',
-        energy_level: 'High',
-        soreness_level: 'None',
-        ai_coach_reflection: 'Great base! Keep cadence light and hydrate well prior to high intensity tempo runs.',
-        created_at: now,
-      },
-    ],
-    documents: [
-      {
-        id: 'doc-1',
-        person_name: 'Self',
-        title: 'Annual Comprehensive Lab Panel (Lipid, HbA1c, Vit D)',
-        doc_type: 'Blood Test',
-        file_url: 'https://storage.nryn.internal/reports/annual-panel-2026.pdf',
-        extracted_summary: 'All markers optimal. Resting glucose 88 mg/dL, HbA1c 5.2%, Vit D3 at 44 ng/mL. Cardiovascular profile excellent.',
-        test_date: '18 Oct 2026',
-        created_at: now,
-      },
-      {
-        id: 'doc-2',
-        person_name: 'Neha',
-        title: 'Routine Health Check & CBC',
-        doc_type: 'Lab Report',
-        file_url: 'https://storage.nryn.internal/reports/neha-cbc-2026.pdf',
-        extracted_summary: 'Hemoglobin 13.4 g/dL (optimal), Thyroid panel normal, Iron stores replenished.',
-        test_date: '12 Sep 2026',
-        created_at: now,
-      },
-      {
-        id: 'doc-3',
-        person_name: 'Prayan',
-        title: 'Pediatric Growth & Vision Screening',
-        doc_type: 'Pediatric Report',
-        file_url: 'https://storage.nryn.internal/reports/prayan-screening.pdf',
-        extracted_summary: 'Growth percentiles: 85th percentile height/weight. Vision 20/20. High athletic endurance.',
-        test_date: '05 Aug 2026',
-        created_at: now,
-      },
-    ],
+    events: [],
+    journals: [],
+    documents: [],
+    meals: [],
   };
 }
 
@@ -451,6 +346,7 @@ function loadHealthDatabase(): HealthDatabaseState {
       const content = fs.readFileSync(DATA_FILE, 'utf-8');
       const parsed = JSON.parse(content);
       if (parsed && parsed.goals && parsed.trainingSessions) {
+        if (!parsed.meals) parsed.meals = [];
         return parsed as HealthDatabaseState;
       }
     } catch (e) {
@@ -650,21 +546,24 @@ export const healthRepository = {
   },
 
   // Training Sessions
-  async getTrainingSessions(week = 4): Promise<TrainingSessionRecord[]> {
+  async getTrainingSessions(week?: number): Promise<TrainingSessionRecord[]> {
     if (isSupabaseConfigured()) {
       try {
-        const { data, error } = await supabase
-          .from('health_training_sessions')
-          .select('*')
-          .eq('week_number', week);
-        if (!error && data) return data as TrainingSessionRecord[];
+        let query = supabase.from('health_training_sessions').select('*');
+        if (week) query = query.eq('week_number', week);
+        const { data, error } = await query;
+        if (!error && data && data.length > 0) return data as TrainingSessionRecord[];
       } catch (err) {
         console.warn('Supabase training sessions failed, fallback:', err);
       }
     }
 
     db = loadHealthDatabase();
-    return db.trainingSessions.filter((s) => s.week_number === week);
+    if (week) {
+      const filtered = db.trainingSessions.filter((s) => s.week_number === week);
+      if (filtered.length > 0) return filtered;
+    }
+    return db.trainingSessions;
   },
 
   async updateTrainingSession(id: string, input: UpdateTrainingSessionInput): Promise<TrainingSessionRecord | null> {
@@ -830,5 +729,121 @@ export const healthRepository = {
     db.documents.unshift(newDoc);
     saveHealthDatabase(db);
     return newDoc;
+  },
+
+  async saveDocumentWithBiomarkers(doc: Omit<DocumentRecord, 'id' | 'created_at'>): Promise<DocumentRecord> {
+    const newDoc: DocumentRecord = {
+      id: `doc-${Date.now()}`,
+      ...doc,
+      created_at: new Date().toISOString(),
+    };
+
+    if (isSupabaseConfigured()) {
+      try {
+        const { data, error } = await supabase.from('health_documents').insert(newDoc).select().single();
+        if (!error && data) return data as DocumentRecord;
+      } catch (err) {
+        console.warn('Supabase saveDocumentWithBiomarkers failed, fallback:', err);
+      }
+    }
+
+    db = loadHealthDatabase();
+    db.documents.unshift(newDoc);
+    saveHealthDatabase(db);
+    return newDoc;
+  },
+
+  // Nutrition / Smart Plate Meal Logs
+  async getMealLogs(person: PersonName): Promise<MealLogRecord[]> {
+    db = loadHealthDatabase();
+    if (!db.meals) db.meals = [];
+    return db.meals.filter((m) => m.person_name === person);
+  },
+
+  async saveMealLog(meal: Omit<MealLogRecord, 'id'>): Promise<MealLogRecord> {
+    const newMeal: MealLogRecord = {
+      id: `meal-${Date.now()}`,
+      ...meal,
+    };
+
+    db = loadHealthDatabase();
+    if (!db.meals) db.meals = [];
+    db.meals.unshift(newMeal);
+    saveHealthDatabase(db);
+    return newMeal;
+  },
+
+  // Wearable Device Connection & Pairing Management
+  getWearable(person: PersonName): WearableDeviceState {
+    db = loadHealthDatabase();
+    const profile = db.profiles?.[person];
+    if (profile?.connected_wearable) {
+      return profile.connected_wearable;
+    }
+    return {
+      connected: false,
+      brand: 'None',
+      device_name: 'No Watch Connected',
+      battery_level: 0,
+      last_synced: 'Never',
+      sync_mode: 'Disconnected',
+    };
+  },
+
+  async connectWearable(
+    person: PersonName,
+    data: { brand: string; device_name: string; connection_type: string; battery_level?: number }
+  ): Promise<WearableDeviceState> {
+    db = loadHealthDatabase();
+    if (!db.profiles) db.profiles = {} as any;
+    if (!db.profiles[person]) {
+      db.profiles[person] = {
+        person_name: person,
+        resting_hr_baseline: 55,
+        sleep_target_minutes: 480,
+        hydration_target_liters: 3.0,
+        recovery_baseline: 85,
+        blood_group: 'O+',
+      };
+    }
+
+    const modeLabel =
+      data.connection_type === 'bluetooth_ble'
+        ? 'Bluetooth BLE'
+        : data.connection_type === 'health_connect'
+        ? 'Google Health Connect'
+        : data.connection_type === 'apple_health'
+        ? 'Apple HealthKit'
+        : 'Cloud Sync API';
+
+    const wearable: WearableDeviceState = {
+      connected: true,
+      brand: data.brand || 'Smartwatch',
+      device_name: data.device_name,
+      battery_level: data.battery_level || Math.floor(Math.random() * 15) + 82, // 82% - 97%
+      last_synced: 'Just now',
+      sync_mode: `${modeLabel} (Active)`,
+    };
+
+    db.profiles[person].connected_wearable = wearable;
+    saveHealthDatabase(db);
+    return wearable;
+  },
+
+  async disconnectWearable(person: PersonName): Promise<WearableDeviceState> {
+    db = loadHealthDatabase();
+    const disconnected: WearableDeviceState = {
+      connected: false,
+      brand: 'None',
+      device_name: 'No Watch Connected',
+      battery_level: 0,
+      last_synced: 'Never',
+      sync_mode: 'Disconnected',
+    };
+    if (db.profiles?.[person]) {
+      db.profiles[person].connected_wearable = disconnected;
+      saveHealthDatabase(db);
+    }
+    return disconnected;
   },
 };

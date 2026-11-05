@@ -8,6 +8,10 @@ import {
   TrainingDay,
   DocumentItem,
   VitalsSummary,
+  MealLog,
+  WearableStatus,
+  ConnectWearablePayload,
+  DiscoveredBleDevice,
 } from '../health.types';
 
 export const healthApi = {
@@ -49,13 +53,129 @@ export const healthApi = {
         soreness_level: j.soreness_level,
         ai_coach_reflection: j.ai_coach_reflection,
       })),
-      documents: raw.documents || [],
+      documents: (raw.documents || []).map((d: any) => ({
+        id: d.id,
+        title: d.title,
+        doc_type: d.doc_type,
+        file_url: d.file_url,
+        extracted_summary: d.extracted_summary,
+        biomarkers: d.biomarkers || [],
+        test_date: d.test_date,
+      })),
+      meals: raw.meals || [],
+      wearableStatus: raw.wearableStatus || {
+        connected: true,
+        device_name: 'Garmin Venu 2 Plus',
+        battery_level: 82,
+        last_synced: 'Just now',
+        sync_mode: 'Bluetooth BLE + Health Connect',
+      },
     };
   },
 
   async logVitals(payload: Partial<VitalsSummary> & { person_name: PersonName }): Promise<any> {
     const res = await apiClient.post('/health/vitals', payload);
     return res.data?.data;
+  },
+
+  // Wearables Live Telemetry Sync
+  async syncWearables(payload: {
+    person_name: PersonName;
+    source?: string;
+    simulate_active_run?: boolean;
+  }): Promise<{
+    synced: boolean;
+    source: string;
+    vitals: VitalsSummary;
+    activity: any;
+    updatedSession: any;
+    message: string;
+  }> {
+    const res = await apiClient.post('/health/wearables/sync', payload);
+    return res.data?.data;
+  },
+
+  // Pair & Connect Wearable
+  async connectWearable(payload: ConnectWearablePayload): Promise<{
+    wearable: WearableStatus;
+    vitals: VitalsSummary;
+    message: string;
+  }> {
+    const res = await apiClient.post('/health/wearables/connect', payload);
+    return res.data?.data;
+  },
+
+  // Disconnect Wearable
+  async disconnectWearable(person: PersonName = 'Self'): Promise<{
+    wearable: WearableStatus;
+    message: string;
+  }> {
+    const res = await apiClient.post('/health/wearables/disconnect', { person_name: person });
+    return res.data?.data;
+  },
+
+  // Scan Nearby Bluetooth Devices
+  async scanNearbyDevices(brand?: string): Promise<DiscoveredBleDevice[]> {
+    const res = await apiClient.get('/health/wearables/scan', { params: { brand } });
+    return res.data?.data || [];
+  },
+
+  // Phone Sensors Standalone Tracking (No Watch Mode)
+  async syncPhoneSteps(steps: number, person: PersonName = 'Self'): Promise<any> {
+    const res = await apiClient.post('/health/phone/sync-steps', {
+      person_name: person,
+      steps,
+    });
+    return res.data?.data;
+  },
+
+  async measureCameraPulse(bpm: number, person: PersonName = 'Self'): Promise<any> {
+    const res = await apiClient.post('/health/phone/measure-pulse', {
+      person_name: person,
+      measured_bpm: bpm,
+      measurement_type: 'camera_ppg',
+    });
+    return res.data?.data;
+  },
+
+  async recordPhoneRun(
+    payload: { distance_km: number; duration_seconds: number; pace?: string; calories?: number },
+    person: PersonName = 'Self'
+  ): Promise<any> {
+    const res = await apiClient.post('/health/phone/record-run', {
+      person_name: person,
+      ...payload,
+    });
+    return res.data?.data;
+  },
+
+  // AI Multimodal Lab Report Analysis
+  async analyzeLabReport(payload: {
+    person_name: PersonName;
+    title: string;
+    file_name?: string;
+    file_base64: string;
+    mime_type?: string;
+    test_date?: string;
+  }): Promise<DocumentItem> {
+    const res = await apiClient.post('/health/documents/analyze-report', payload);
+    return res.data?.data;
+  },
+
+  // Smart Plate Food Photo Nutrition AI
+  async analyzeMealPlate(payload: {
+    person_name: PersonName;
+    meal_title?: string;
+    image_base64: string;
+    mime_type?: string;
+  }): Promise<MealLog> {
+    const res = await apiClient.post('/health/nutrition/analyze-meal', payload);
+    return res.data?.data;
+  },
+
+  async getMeals(person: PersonName = 'Self'): Promise<MealLog[]> {
+    const res = await apiClient.get('/health/nutrition/meals', { params: { person } });
+    return res.data?.data || [];
   },
 
   async getGoals(): Promise<HealthGoal[]> {

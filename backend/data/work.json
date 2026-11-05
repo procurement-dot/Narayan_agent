@@ -1,0 +1,45 @@
+{
+  "projects": [],
+  "invoices": [],
+  "deals": [],
+  "team_ops": {
+    "total_staff": 0,
+    "present_count": 0,
+    "departments": [],
+    "tickets": []
+  },
+  "ea_signals": [],
+  "external_apps": [
+    {
+      "id": "ext-infra",
+      "name": "Infra Project Tracker",
+      "app_key": "infra_tracker",
+      "subtitle": "Civil construction, site inspections & contractor milestones",
+      "tag": "Civil & Infra",
+      "deploy_url": "",
+      "status": "ready",
+      "summary_metrics": {
+        "activeProjects": 0,
+        "onTrack": 0,
+        "delayed": 0,
+        "latestUpdate": "Paste your deployed link to connect live"
+      },
+      "is_active": true
+    },
+    {
+      "id": "ext-second",
+      "name": "Enterprise Operations & Asset Manager",
+      "app_key": "second_app",
+      "subtitle": "Operations, resources & field tracking",
+      "tag": "Operations ERP",
+      "deploy_url": "",
+      "status": "ready",
+      "summary_metrics": {
+        "activeModules": 0,
+        "pendingApprovals": 0,
+        "latestUpdate": "Paste your deployed link to connect live"
+      },
+      "is_active": true
+    }
+  ]
+}
