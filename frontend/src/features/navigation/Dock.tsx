@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,185 +7,229 @@ import {
   ScrollView,
   Modal,
   Pressable,
+  Platform,
+  Animated,
+  PanResponder,
+  Dimensions,
 } from 'react-native';
-import { DOCK_SPACES, SpaceId } from './navigation.types';
+import { DOCK_SPACES } from './navigation.types';
 import { useNavigationStore } from './navigation.store';
-import { colors, radii, spacing, typography } from '../../shared/theme/tokens';
+import { Icon } from '../../shared/components/Icon';
 
 export const Dock: React.FC = () => {
   const { isDockOpen, closeDock, currentSpace, navigate } = useNavigationStore();
+  const slideAnim = useRef(new Animated.Value(120)).current;
+  const useNative = Platform.OS !== 'web';
+
+  useEffect(() => {
+    if (isDockOpen) {
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        useNativeDriver: useNative,
+        tension: 65,
+        friction: 9,
+      }).start();
+    } else {
+      Animated.timing(slideAnim, {
+        toValue: 120,
+        duration: 180,
+        useNativeDriver: useNative,
+      }).start();
+    }
+  }, [isDockOpen]);
+
+  // Swipe-right gesture on the dock to dismiss/close it
+  const dockPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return gestureState.dx > 15 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy);
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dx > 30) {
+          closeDock();
+        }
+      },
+    })
+  ).current;
 
   if (!isDockOpen) return null;
+
+  const screenHeight = Dimensions.get('window').height;
+  const maxDockHeight = Math.min(screenHeight * 0.82, 730);
 
   return (
     <Modal
       visible={isDockOpen}
       transparent
-      animationType="fade"
+      animationType="none"
       onRequestClose={closeDock}
     >
-      <Pressable style={styles.backdrop} onPress={closeDock}>
-        <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
-          <View style={styles.handle} />
-          <View style={styles.header}>
-            <Text style={styles.title}>NRYN SPACES</Text>
-            <TouchableOpacity onPress={closeDock} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={styles.closeBtn}>✕</Text>
-            </TouchableOpacity>
-          </View>
+      {/* 
+        Transparent background overlay (HTML Reference: #dock-root .dock-outside).
+        Does NOT blur the underlying screen, so the full calendar/content stays 100% visible!
+      */}
+      <View style={styles.backdrop}>
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={closeDock}
+          accessibilityLabel="Dismiss dock"
+        />
 
+        {/* Right-Side macOS Vertical Floating Glassmorphism Dock (HTML Reference: .mac-dock) */}
+        <Animated.View
+          style={[
+            styles.macDock,
+            {
+              maxHeight: maxDockHeight,
+              transform: [{ translateX: slideAnim }, { translateY: -maxDockHeight / 2 }],
+            },
+          ]}
+          {...dockPanResponder.panHandlers}
+        >
           <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.dockRail}
+            bounces={true}
           >
             {DOCK_SPACES.map((space) => {
               const isActive = currentSpace === space.id;
               return (
                 <TouchableOpacity
                   key={space.id}
-                  style={[
-                    styles.spaceCard,
-                    { borderColor: isActive ? colors.ink : 'transparent' },
-                  ]}
+                  style={styles.dockGlyph}
                   onPress={() => {
                     navigate(space.id);
+                    closeDock();
                   }}
-                  activeOpacity={0.8}
+                  activeOpacity={0.72}
+                  accessibilityLabel={space.label}
+                  accessibilityRole="button"
                 >
                   <View
                     style={[
                       styles.glyphShape,
                       { backgroundColor: space.color },
+                      isActive && styles.glyphShapeActive,
                     ]}
                   >
-                    <Text style={styles.glyphEmoji}>
-                      {getSpaceEmoji(space.id)}
-                    </Text>
+                    <Icon
+                      name={space.icon}
+                      size={22}
+                      color={isActive ? '#1e2821' : '#384b40'}
+                      strokeWidth={isActive ? 2 : 1.65}
+                    />
                   </View>
+
                   <Text
-                    style={[
-                      styles.spaceLabel,
-                      isActive && styles.activeSpaceLabel,
-                    ]}
-                    numberOfLines={1}
+                    style={[styles.glyphLabel, isActive && styles.glyphLabelActive]}
+                    numberOfLines={2}
                   >
                     {space.label}
                   </Text>
+
+                  {isActive ? (
+                    <View style={styles.activeDot} />
+                  ) : (
+                    <View style={styles.activeDotPlaceholder} />
+                  )}
                 </TouchableOpacity>
               );
             })}
           </ScrollView>
-        </Pressable>
-      </Pressable>
+        </Animated.View>
+      </View>
     </Modal>
   );
 };
 
-function getSpaceEmoji(id: SpaceId): string {
-  switch (id) {
-    case 'today':
-      return '⏱';
-    case 'kickstart':
-      return '☀️';
-    case 'health':
-      return '🏃';
-    case 'inbox':
-      return '👥';
-    case 'email':
-      return '✉️';
-    case 'finance':
-      return '💰';
-    case 'work':
-      return '💼';
-    case 'prayan':
-      return '🧩';
-    case 'travel':
-      return '✈️';
-    case 'spirit':
-      return '🧘';
-    case 'growth':
-      return '🌱';
-    case 'notes':
-      return '📝';
-    case 'settings':
-      return '⚙️';
-    default:
-      return '•';
-  }
-}
-
 const styles = StyleSheet.create({
+  // Completely transparent backdrop so background content stays crystal clear and readable
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
+    backgroundColor: 'transparent',
+    position: 'relative',
   },
-  sheet: {
-    backgroundColor: colors.bg,
-    borderTopLeftRadius: radii.xl,
-    borderTopRightRadius: radii.xl,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.xl,
-    paddingHorizontal: spacing.md,
-    maxHeight: 220,
+  // Authentic macOS-style Right Floating Dock (.mac-dock from nryn-v6.9.html)
+  macDock: {
+    position: 'absolute',
+    right: 10,
+    top: '50%',
+    width: 94,
+    backgroundColor: 'rgba(236, 239, 234, 0.88)',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.85)',
+    paddingVertical: 10,
+    paddingHorizontal: 5,
+    shadowColor: '#394539',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.22,
+    shadowRadius: 36,
+    elevation: 16,
+    zIndex: 90,
+    ...(Platform.OS === 'web'
+      ? ({
+          backdropFilter: 'blur(28px) saturate(1.4)',
+          WebkitBackdropFilter: 'blur(28px) saturate(1.4)',
+        } as any)
+      : {}),
   },
-  handle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.borderDark,
-    alignSelf: 'center',
-    marginBottom: spacing.sm,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  dockRail: {
+    flexDirection: 'column',
     alignItems: 'center',
-    marginBottom: spacing.md,
-    paddingHorizontal: spacing.xs,
+    gap: 8,
+    paddingVertical: 4,
   },
-  title: {
-    fontSize: typography.bodySm.fontSize,
-    fontFamily: typography.fontFamily.uiMedium,
-    color: colors.muted,
-    letterSpacing: 1.5,
-  },
-  closeBtn: {
-    fontSize: 16,
-    color: colors.ink,
-    padding: 4,
-  },
-  scrollContent: {
-    paddingVertical: spacing.xs,
-    gap: spacing.md,
-  },
-  spaceCard: {
+  dockGlyph: {
+    width: 80,
     alignItems: 'center',
-    width: 68,
-    paddingVertical: spacing.xs,
-    borderRadius: radii.md,
-    borderWidth: 1.5,
+    paddingVertical: 3,
+    position: 'relative',
   },
   glyphShape: {
-    width: 46,
-    height: 46,
-    borderRadius: radii.md,
+    width: 44,
+    height: 44,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.xs,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.75)',
+    shadowColor: '#4a5a4d',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 3,
   },
-  glyphEmoji: {
-    fontSize: 22,
+  glyphShapeActive: {
+    borderColor: '#384b40',
+    borderWidth: 1.8,
+    shadowOpacity: 0.24,
+    shadowRadius: 8,
   },
-  spaceLabel: {
-    fontSize: 11,
-    fontFamily: typography.fontFamily.uiMedium,
-    color: colors.inkSecondary,
+  glyphLabel: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: '#485248',
+    marginTop: 3,
     textAlign: 'center',
+    maxWidth: 76,
+    minHeight: 12,
   },
-  activeSpaceLabel: {
-    color: colors.ink,
-    fontWeight: '700',
+  glyphLabelActive: {
+    color: '#1a221c',
+    fontWeight: '800',
+  },
+  activeDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#4c6759',
+    marginTop: 2,
+  },
+  activeDotPlaceholder: {
+    width: 4,
+    height: 4,
+    marginTop: 2,
   },
 });

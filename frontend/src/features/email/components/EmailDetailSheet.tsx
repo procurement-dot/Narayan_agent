@@ -42,9 +42,9 @@ export const EmailDetailSheet: React.FC<EmailDetailSheetProps> = ({
   useEffect(() => {
     if (!email) return;
 
-    const initialDraft = savedDraft !== undefined ? savedDraft : email.draft || '';
-    if (initialDraft) {
-      setDraftText(initialDraft);
+    const existingDraft = (savedDraft && savedDraft.trim()) || (email.draft && email.draft.trim()) || '';
+    if (existingDraft) {
+      setDraftText(existingDraft);
       setIsGenerating(false);
     } else {
       // Auto-generate AI draft immediately when opening any email that has no draft yet!
@@ -63,7 +63,7 @@ export const EmailDetailSheet: React.FC<EmailDetailSheetProps> = ({
           setIsGenerating(false);
         });
     }
-  }, [email?.id, savedDraft]);
+  }, [email?.id]);
 
   if (!email) return null;
 

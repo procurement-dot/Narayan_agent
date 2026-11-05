@@ -43,6 +43,14 @@ export const emailRepository = {
     return Boolean(row);
   },
 
+  async getExistingMessageIds(accountId: string): Promise<Set<string>> {
+    const rows = await db.query(
+      'SELECT provider_msg_id FROM emails WHERE account_id = $1',
+      [accountId]
+    );
+    return new Set(rows.map((r: any) => r.provider_msg_id));
+  },
+
   async getEmailAccount(userId: string) {
     return db.queryOne(
       `SELECT * FROM email_accounts 
@@ -53,8 +61,38 @@ export const emailRepository = {
   },
 
   async disconnectEmailAccount(userId: string) {
+    // 1. Remove proposals tied to this account's emails
+    await db.query(
+      `DELETE FROM proposals WHERE email_id IN (
+         SELECT e.id FROM emails e
+         JOIN email_accounts a ON a.id = e.account_id
+         WHERE a.user_id = $1 AND a.provider = 'gmail'
+       )`,
+      [userId]
+    );
+
+    // 2. Remove email drafts tied to this account's emails
+    await db.query(
+      `DELETE FROM email_drafts WHERE email_id IN (
+         SELECT e.id FROM emails e
+         JOIN email_accounts a ON a.id = e.account_id
+         WHERE a.user_id = $1 AND a.provider = 'gmail'
+       )`,
+      [userId]
+    );
+
+    // 3. Remove cached emails
+    await db.query(
+      `DELETE FROM emails WHERE account_id IN (
+         SELECT id FROM email_accounts WHERE user_id = $1 AND provider = 'gmail'
+       )`,
+      [userId]
+    );
+
+    // 4. Mark account disconnected
     return db.query(
-      `UPDATE email_accounts SET status = 'disconnected', updated_at = NOW() 
+      `UPDATE email_accounts 
+       SET status = 'disconnected', updated_at = NOW() 
        WHERE user_id = $1 AND provider = 'gmail'`,
       [userId]
     );
@@ -154,6 +192,9 @@ export const emailRepository = {
   },
 
   async getEmailById(id: string) {
+    if (!isUuid(id)) {
+      return null;
+    }
     return db.queryOne(
       `SELECT e.*, d.body as saved_draft 
        FROM emails e 

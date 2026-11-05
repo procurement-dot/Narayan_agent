@@ -176,11 +176,16 @@ export const emailController = {
 
   async generateDraft(req: Request, res: Response) {
     const { id } = req.params;
-    const { instruction } = req.body;
+    const { instruction, subject, content, fromName, fromEmail } = req.body;
     const userId = (req as any).userId || '00000000-0000-0000-0000-000000000001';
 
     try {
-      const result = await emailService.generateDraft(id, userId, instruction);
+      const result = await emailService.generateDraft(id, userId, instruction, {
+        subject,
+        content,
+        fromName,
+        fromEmail,
+      });
       res.json(result);
     } catch (err: any) {
       console.error('Failed to generate draft:', err);

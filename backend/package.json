@@ -5,9 +5,10 @@
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
-    "prestart": "npm run build",
+    "prestart": "node scripts/free-port.js 4000 && npm run build",
     "start": "node dist/server.js",
-    "dev": "tsx watch src/server.ts",
+    "kill-port": "node scripts/free-port.js 4000",
+    "dev": "node scripts/free-port.js 4000 && tsx watch src/server.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -40,7 +40,11 @@ export const emailApi = {
   },
 
   async syncEmails(maxResults = 15): Promise<SyncResponse> {
-    const res = await apiClient.post<SyncResponse>('/email/sync', { maxResults });
+    const res = await apiClient.post<SyncResponse>(
+      '/email/sync',
+      { maxResults },
+      { timeout: 120000 }
+    );
     return res.data;
   },
 
@@ -60,13 +64,24 @@ export const emailApi = {
     return res.data;
   },
 
-  async generateDraft(emailId: string, instruction?: string): Promise<{ draft: string }> {
-    const res = await apiClient.post<{ draft: string }>(`/email/${emailId}/generate-draft`, { instruction });
+  async generateDraft(
+    emailId: string,
+    options?: { instruction?: string; subject?: string; content?: string; fromName?: string }
+  ): Promise<{ draft: string }> {
+    const res = await apiClient.post<{ draft: string }>(
+      `/email/${emailId}/generate-draft`,
+      options || {},
+      { timeout: 60000 }
+    );
     return res.data;
   },
 
   async sendReply(emailId: string, body: string): Promise<{ success: boolean; message: string }> {
-    const res = await apiClient.post<{ success: boolean; message: string }>(`/email/${emailId}/send`, { body });
+    const res = await apiClient.post<{ success: boolean; message: string }>(
+      `/email/${emailId}/send`,
+      { body },
+      { timeout: 45000 }
+    );
     return res.data;
   },
 

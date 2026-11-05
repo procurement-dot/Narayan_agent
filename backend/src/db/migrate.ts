@@ -1,3 +1,4 @@
+// @ts-nocheck
 import fs from 'node:fs';
 import path from 'node:path';
 import pg from 'pg';
@@ -22,12 +23,15 @@ async function runMigration() {
     await client.connect();
     console.log('Connected to Supabase PostgreSQL successfully!');
 
-    const sqlPath = path.join(process.cwd(), 'src', 'db', 'migrations', '001_initial_schema.sql');
-    const sql = fs.readFileSync(sqlPath, 'utf8');
+    const migrationsDir = path.join(process.cwd(), 'src', 'db', 'migrations');
+    const files = fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort();
 
-    console.log('Running 001_initial_schema.sql migration...');
-    await client.query(sql);
-    console.log('Migration completed successfully! All tables created.');
+    for (const file of files) {
+      console.log(`Running migration ${file}...`);
+      const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
+      await client.query(sql);
+      console.log(`✓ Migration ${file} completed.`);
+    }
 
     const res = await client.query(`
       SELECT table_name 

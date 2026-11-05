@@ -99,6 +99,7 @@ const styles = StyleSheet.create({
   },
   spaceContainer: {
     flex: 1,
-    paddingBottom: 85,
+    paddingBottom: 0,
   },
 });
+
