@@ -191,12 +191,19 @@ export const calendarRepository = {
           if (Array.isArray(n.mom_data?.actions)) {
             n.mom_data.actions.forEach((act: any, idx: number) => {
               if (act?.task) {
+                const startHour = 16 + Math.floor(idx / 2);
+                const startMin = (idx % 2) * 30;
+                const endHour = startMin === 0 ? startHour : startHour + 1;
+                const endMin = startMin === 0 ? 30 : 0;
+                const startTimeStr = `${String(startHour).padStart(2, '0')}:${String(startMin).padStart(2, '0')}`;
+                const endTimeStr = `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
+
                 addEventSafely({
                   id: `note-act-${n.id}-${idx}`,
                   user_id: userId,
                   date: dateStr,
-                  start_time: '16:00',
-                  end_time: '16:30',
+                  start_time: startTimeStr,
+                  end_time: endTimeStr,
                   title: act.task,
                   subtitle: `MoM Action · ${act.assignee || 'Self'} (Due: ${act.due || 'Today'})`,
                   detail: `Context from meeting note: "${n.title}"`,

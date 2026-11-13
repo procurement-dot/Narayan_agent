@@ -3,30 +3,7 @@ import { db } from './db.js';
 export async function seedAllData() {
   console.log('[SeedAll] Verifying and seeding initial data across all modules...');
 
-  // 1. Seed Calendar Events (if empty)
-  try {
-    const calCount = await db.queryOne('SELECT COUNT(*) as count FROM calendar_events');
-    if (Number(calCount?.count || 0) === 0) {
-      console.log('[SeedAll] Seeding calendar_events...');
-      const today = new Date().toISOString().split('T')[0];
-      const calEvents = [
-        ['Morning clarity & priority setting', 'Daily opening rhythm', '08:30', '09:00', today, 'peach', 'assistant', 'active'],
-        ['AKC Season Planning & Expansion', 'KinderSports focus session', '10:00', '10:50', today, 'peach', 'work', 'active'],
-        ['A quiet pause', '5 minutes without a screen', '11:40', '12:00', today, 'green', 'health', 'active'],
-        ['Sports School follow-up', 'Manjalpur project academic partner', '12:30', '13:15', today, 'peach', 'work', 'active'],
-        ['Review money & commitments', 'Pending invoices & payroll checks', '15:00', '15:30', today, 'purple', 'finance', 'active'],
-      ];
-      for (const ev of calEvents) {
-        await db.query(
-          `INSERT INTO calendar_events (user_id, title, subtitle, start_time, end_time, date, cat, kind, status)
-           VALUES ('00000000-0000-0000-0000-000000000001', $1, $2, $3, $4, $5, $6, $7, $8)`,
-          ev
-        );
-      }
-    }
-  } catch (err) {
-    console.warn('[SeedAll] calendar_events seed skipped:', err);
-  }
+  // Note: Calendar events are left clean (no dummy data) - real events come from Google Calendar sync, email proposals, or user creation.
 
   // 2. Seed Notes (if empty)
   try {

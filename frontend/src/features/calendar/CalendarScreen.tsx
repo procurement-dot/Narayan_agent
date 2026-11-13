@@ -1122,9 +1122,6 @@ const styles = StyleSheet.create({
   },
   intentionCard: {
     position: 'absolute',
-    left: 104,
-    right: 12,
-    maxWidth: 520,
     backgroundColor: '#ffffff',
     borderRadius: 8,
     borderLeftWidth: 3.5,
