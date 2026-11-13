@@ -2,6 +2,7 @@ import { app } from './app.js';
 import { env } from './config/env.js';
 import { emailService } from './features/email/email.service.js';
 import { freePort } from './shared/utils/port.js';
+import { seedAllData } from './db/seed_all.js';
 
 process.on('unhandledRejection', (reason) => {
   console.warn('[Unhandled Rejection caught]:', reason);
@@ -20,9 +21,14 @@ try {
   // Continue even if freePort fails
 }
 
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, async () => {
   console.log(`[NRYN Backend] Server running on http://localhost:${PORT}`);
   emailService.startBackgroundSync(15000);
+  try {
+    await seedAllData();
+  } catch (seedErr) {
+    console.warn('[NRYN Backend] Seed verification skipped:', seedErr);
+  }
 });
 
 server.on('error', (err: any) => {
@@ -32,9 +38,12 @@ server.on('error', (err: any) => {
       freePort(PORT);
       setTimeout(() => {
         server.close();
-        server.listen(PORT, () => {
+        server.listen(PORT, async () => {
           console.log(`[NRYN Backend] Recovered and server running on http://localhost:${PORT}`);
           emailService.startBackgroundSync(15000);
+          try {
+            await seedAllData();
+          } catch {}
         });
       }, 600);
     } catch (killErr) {

@@ -366,7 +366,7 @@ You MUST respond ONLY with valid JSON matching this schema without any markdown 
           headers: {
             Authorization: `Bearer ${apiKey}`,
             'Content-Type': 'application/json',
-            'HTTP-Referer': 'http://localhost:4000',
+            'HTTP-Referer': process.env.RENDER_EXTERNAL_URL || 'https://narayan-agent.onrender.com',
             'X-Title': 'NRYN Health AI',
           },
           body: JSON.stringify({
@@ -472,7 +472,7 @@ You MUST respond ONLY with valid JSON matching this schema without any markdown 
           headers: {
             Authorization: `Bearer ${apiKey}`,
             'Content-Type': 'application/json',
-            'HTTP-Referer': 'http://localhost:4000',
+            'HTTP-Referer': process.env.RENDER_EXTERNAL_URL || 'https://narayan-agent.onrender.com',
             'X-Title': 'NRYN Nutrition AI',
           },
           body: JSON.stringify({

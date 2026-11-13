@@ -13,7 +13,7 @@ const envSchema = z.object({
   TOKEN_ENC_KEY: z.string().default('0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'),
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
-  GOOGLE_REDIRECT_URI: z.string().default('http://localhost:4000/api/email/oauth/callback'),
+  GOOGLE_REDIRECT_URI: z.string().default('https://narayan-agent.onrender.com/api/email/oauth/callback'),
   LLM_PROVIDER: z.string().default('gemini'),
   LLM_API_KEY: z.string().optional(),
   LLM_MODEL: z.string().default('google/gemini-3.5-flash'),

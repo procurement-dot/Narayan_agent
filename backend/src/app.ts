@@ -5,6 +5,7 @@ import { emailRouter } from './features/email/email.routes.js';
 import { notesRouter } from './features/notes/notes.routes.js';
 import { healthRouter } from './features/health/health.routes.js';
 import { calendarRouter } from './features/calendar/calendar.routes.js';
+import { workRouter } from './features/work/work.routes.js';
 
 export const app = express();
 
@@ -19,6 +20,7 @@ app.use('/api/email', emailRouter);
 app.use('/api/notes', notesRouter);
 app.use('/api/health', healthRouter);
 app.use('/api/calendar', calendarRouter);
+app.use('/api/work', workRouter);
 
 // Health check endpoint
 app.get('/health', (_req, res) => {
