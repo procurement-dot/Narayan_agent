@@ -150,6 +150,52 @@ export const calendarService = {
     userId: string = DEFAULT_USER_ID,
     eventId: string
   ): Promise<{ success: boolean }> {
+    if (!eventId) return { success: true };
+
+    // 1. Handle proposal items: 'prop-<uuid>'
+    if (eventId.startsWith('prop-')) {
+      const propId = eventId.replace('prop-', '');
+      await calendarRepository.deleteProposal(userId, propId);
+      return { success: true };
+    }
+
+    // 2. Handle email meeting items: 'email-mtg-<uuid>'
+    if (eventId.startsWith('email-mtg-')) {
+      const emailId = eventId.replace('email-mtg-', '');
+      await calendarRepository.deleteEmailMeeting(userId, emailId);
+      return { success: true };
+    }
+
+    // 3. Handle notes MoM or Action items: 'note-mom-<uuid>' or 'note-act-<uuid>-<idx>'
+    if (eventId.startsWith('note-mom-')) {
+      const noteId = eventId.replace('note-mom-', '');
+      await calendarRepository.deleteNoteEvent(userId, noteId);
+      return { success: true };
+    }
+    if (eventId.startsWith('note-act-')) {
+      const parts = eventId.replace('note-act-', '').split('-');
+      if (parts.length >= 6) {
+        const noteId = parts.slice(0, 5).join('-');
+        const actIdx = parseInt(parts[5], 10);
+        await calendarRepository.deleteNoteAction(userId, noteId, actIdx);
+      }
+      return { success: true };
+    }
+
+    // 4. Handle tasks: 'task-<uuid>'
+    if (eventId.startsWith('task-')) {
+      const taskId = eventId.replace('task-', '');
+      await calendarRepository.deleteTask(userId, taskId);
+      return { success: true };
+    }
+
+    // 5. Standard calendar_events item (check UUID)
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!UUID_REGEX.test(eventId)) {
+      console.warn(`[CalendarService] Non-UUID event ID received, skipping DB delete: ${eventId}`);
+      return { success: true };
+    }
+
     const existing = await calendarRepository.getEventById(userId, eventId);
     if (existing?.google_event_id) {
       try {

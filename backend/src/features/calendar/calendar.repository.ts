@@ -344,6 +344,10 @@ export const calendarRepository = {
   },
 
   async getEventById(userId: string, eventId: string) {
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!UUID_REGEX.test(eventId)) {
+      return null;
+    }
     return db.queryOne(
       `SELECT * FROM calendar_events WHERE id = $1 AND user_id = $2`,
       [eventId, userId]
@@ -379,6 +383,11 @@ export const calendarRepository = {
   },
 
   async updateEvent(userId: string, eventId: string, updates: UpdateCalendarEventDto) {
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!UUID_REGEX.test(eventId)) {
+      return null;
+    }
+
     const fields: string[] = [];
     const values: any[] = [];
     let idx = 1;
@@ -437,12 +446,86 @@ export const calendarRepository = {
   },
 
   async deleteEvent(userId: string, eventId: string) {
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!UUID_REGEX.test(eventId)) {
+      return null;
+    }
     return db.queryOne(
       `DELETE FROM calendar_events 
        WHERE id = $1 AND user_id = $2 
        RETURNING *`,
       [eventId, userId]
     );
+  },
+
+  async deleteProposal(userId: string, proposalId: string) {
+    try {
+      await db.query(
+        `UPDATE proposals SET status = 'dismissed' WHERE id = $1`,
+        [proposalId]
+      );
+      await db.query(
+        `DELETE FROM calendar_events WHERE source_proposal_id = $1`,
+        [proposalId]
+      );
+      await db.query(
+        `DELETE FROM tasks WHERE source_proposal_id = $1`,
+        [proposalId]
+      );
+    } catch (err) {
+      console.warn('[CalendarRepo] deleteProposal error:', err);
+    }
+  },
+
+  async deleteEmailMeeting(userId: string, emailId: string) {
+    try {
+      await db.query(
+        `UPDATE emails SET is_archived = true WHERE id = $1`,
+        [emailId]
+      );
+    } catch (err) {
+      console.warn('[CalendarRepo] deleteEmailMeeting error:', err);
+    }
+  },
+
+  async deleteNoteEvent(userId: string, noteId: string) {
+    try {
+      await db.query(
+        `DELETE FROM notes WHERE id = $1`,
+        [noteId]
+      );
+    } catch (err) {
+      console.warn('[CalendarRepo] deleteNoteEvent error:', err);
+    }
+  },
+
+  async deleteNoteAction(userId: string, noteId: string, actionIndex: number) {
+    try {
+      const note = await db.queryOne(
+        `SELECT mom_data FROM notes WHERE id = $1`,
+        [noteId]
+      );
+      if (note && note.mom_data && Array.isArray(note.mom_data.actions)) {
+        note.mom_data.actions.splice(actionIndex, 1);
+        await db.query(
+          `UPDATE notes SET mom_data = $1 WHERE id = $2`,
+          [JSON.stringify(note.mom_data), noteId]
+        );
+      }
+    } catch (err) {
+      console.warn('[CalendarRepo] deleteNoteAction error:', err);
+    }
+  },
+
+  async deleteTask(userId: string, taskId: string) {
+    try {
+      await db.query(
+        `DELETE FROM tasks WHERE id = $1`,
+        [taskId]
+      );
+    } catch (err) {
+      console.warn('[CalendarRepo] deleteTask error:', err);
+    }
   },
 
   async upsertGoogleEvent(

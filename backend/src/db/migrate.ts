@@ -24,13 +24,13 @@ async function runMigration() {
     console.log('Connected to Supabase PostgreSQL successfully!');
 
     const migrationsDir = path.join(process.cwd(), 'src', 'db', 'migrations');
-    const files = fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort();
+    const migrationFiles = fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort();
 
-    for (const file of files) {
+    for (const file of migrationFiles) {
       console.log(`Running migration ${file}...`);
       const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
       await client.query(sql);
-      console.log(`✓ Migration ${file} completed.`);
+      console.log(`Migration ${file} completed successfully!`);
     }
 
     const res = await client.query(`
@@ -39,9 +39,10 @@ async function runMigration() {
       WHERE table_schema = 'public' 
       ORDER BY table_name;
     `);
-    console.log('Public tables:', res.rows.map(r => r.table_name));
+    console.log('Public tables:', res.rows.map((r: any) => r.table_name));
   } catch (err) {
     console.error('Migration error:', err);
+    process.exitCode = 1;
   } finally {
     await client.end();
   }
