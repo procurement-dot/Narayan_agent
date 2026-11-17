@@ -155,7 +155,16 @@ export const healthService = {
       'Fire-Boltt': ['Fire-Boltt Gladiator BT', 'Fire-Boltt Invincible Plus'],
     };
 
-    const list = (brand && devicePool[brand]) ? devicePool[brand] : Object.values(devicePool).flat().slice(0, 6);
+    const defaultNearby = [
+      'Noise ColorFit Pro 5 #3B8',
+      'boAt Wave Astra (BLE)',
+      'Apple Watch Series 9 (BLE)',
+      'Fire-Boltt Gladiator BT',
+      'Galaxy Watch6 Classic (BT)',
+      'Garmin Forerunner 265 #8921',
+    ];
+
+    const list = (brand && devicePool[brand]) ? devicePool[brand] : defaultNearby;
     return list.map((name, i) => ({
       id: `ble-${i}-${name.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`,
       name,
@@ -173,16 +182,17 @@ export const healthService = {
         ? input.source
         : currentWearable.connected
         ? currentWearable.device_name
-        : 'Garmin Venu 2 Plus';
+        : 'Smartwatch';
 
     console.log(`[Wearable Sync] Ingesting live telemetry from ${effectiveSource} for ${input.person_name}...`);
 
-    // Ingest latest biometric telemetry
-    const resting_hr = 50;
-    const sleep_duration_minutes = 462; // 7h 42m
-    const recovery_score = 92;
-    const steps_count = 9450;
-    const hydration_liters = 3.4;
+    // Ingest biometric telemetry (use real parameters if provided)
+    const existingVitals = await healthRepository.getLatestVitals(input.person_name);
+    const resting_hr = input.heart_rate ?? existingVitals?.resting_hr ?? 0;
+    const sleep_duration_minutes = existingVitals?.sleep_duration_minutes ?? 0;
+    const recovery_score = existingVitals?.recovery_score ?? 0;
+    const steps_count = input.steps ?? existingVitals?.steps_count ?? 0;
+    const hydration_liters = existingVitals?.hydration_liters ?? 0;
 
     const vitals = await healthRepository.logVitals({
       person_name: input.person_name,
@@ -191,11 +201,19 @@ export const healthService = {
       recovery_score,
       steps_count,
       hydration_liters,
-      energy_level: 'Optimal Adaptation',
+      energy_level: resting_hr > 0 ? (resting_hr < 75 ? 'Optimal Adaptation' : 'Active') : 'Connected',
       source: effectiveSource,
     });
 
+    if (input.battery_level !== undefined) {
+      await healthRepository.updateWearableSync(input.person_name, {
+        battery_level: input.battery_level,
+        last_synced: 'Just now',
+      });
+    }
+
     let updatedSession = null;
+    let activity = null;
     if (input.simulate_active_run) {
       // Find today's workout in week 4 and mark as completed
       const sessions = await healthRepository.getTrainingSessions(4);
@@ -208,14 +226,7 @@ export const healthService = {
           synced_to_calendar: true,
         });
       }
-    }
-
-    return {
-      synced: true,
-      source: effectiveSource,
-      synced_at: new Date().toISOString(),
-      vitals,
-      activity: {
+      activity = {
         type: 'Outdoor Running',
         distance: '8.1 km',
         duration: '39m 12s',
@@ -224,9 +235,20 @@ export const healthService = {
         max_hr: 172,
         calories_burned: 540,
         cadence: 178,
-      },
+      };
+    }
+
+    const hrText = input.heart_rate ? ` (HR: ${input.heart_rate} bpm)` : '';
+    const battText = input.battery_level !== undefined ? ` (Batt: ${input.battery_level}%)` : '';
+
+    return {
+      synced: true,
+      source: effectiveSource,
+      synced_at: new Date().toISOString(),
+      vitals,
+      activity,
       updatedSession,
-      message: `Successfully synchronized ${effectiveSource} telemetry. Workout auto-marked completed.`,
+      message: `Successfully synchronized ${effectiveSource} telemetry${hrText}${battText}.`,
     };
   },
 

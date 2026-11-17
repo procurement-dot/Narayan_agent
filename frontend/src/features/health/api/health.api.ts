@@ -83,6 +83,9 @@ export const healthApi = {
     person_name: PersonName;
     source?: string;
     simulate_active_run?: boolean;
+    heart_rate?: number;
+    battery_level?: number;
+    steps?: number;
   }): Promise<{
     synced: boolean;
     source: string;

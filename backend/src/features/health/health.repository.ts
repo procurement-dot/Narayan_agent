@@ -846,4 +846,20 @@ export const healthRepository = {
     }
     return disconnected;
   },
+
+  async updateWearableSync(
+    person: PersonName,
+    data: { battery_level?: number; last_synced?: string }
+  ): Promise<WearableDeviceState | null> {
+    db = loadHealthDatabase();
+    if (db.profiles?.[person]?.connected_wearable) {
+      if (data.battery_level !== undefined) {
+        db.profiles[person].connected_wearable.battery_level = data.battery_level;
+      }
+      db.profiles[person].connected_wearable.last_synced = data.last_synced || 'Just now';
+      saveHealthDatabase(db);
+      return db.profiles[person].connected_wearable;
+    }
+    return null;
+  },
 };

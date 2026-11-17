@@ -114,7 +114,10 @@ export type DisconnectWearableInput = z.infer<typeof DisconnectWearableDto>;
 export const SyncWearableDto = z.object({
   person_name: PersonNameSchema.default('Self'),
   source: z.string().default('Smartwatch'),
-  simulate_active_run: z.boolean().default(true),
+  simulate_active_run: z.boolean().default(false),
+  heart_rate: z.number().int().min(30).max(250).optional(),
+  battery_level: z.number().int().min(0).max(100).optional(),
+  steps: z.number().int().min(0).optional(),
 });
 export type SyncWearableInput = z.infer<typeof SyncWearableDto>;
 

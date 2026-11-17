@@ -67,10 +67,16 @@ interface HealthState {
   pairAndConnectDevice: (
     brand: string,
     deviceName: string,
-    connectionType?: 'bluetooth_ble' | 'health_connect' | 'apple_health' | 'cloud_sync'
+    connectionType?: 'bluetooth_ble' | 'health_connect' | 'apple_health' | 'cloud_sync',
+    batteryLevel?: number
   ) => Promise<string>;
   disconnectWearableDevice: () => Promise<string>;
-  syncWearableData: () => Promise<string>;
+  syncWearableData: (options?: {
+    heart_rate?: number;
+    battery_level?: number;
+    steps?: number;
+    simulate_active_run?: boolean;
+  }) => Promise<string>;
   uploadAndAnalyzeReport: (
     file: { name: string; base64: string; mimeType: string },
     title?: string
@@ -223,7 +229,7 @@ export const useHealthStore = create<HealthState>((set, get) => ({
     }
   },
 
-  pairAndConnectDevice: async (brand, deviceName, connectionType = 'bluetooth_ble') => {
+  pairAndConnectDevice: async (brand, deviceName, connectionType = 'bluetooth_ble', batteryLevel?: number) => {
     const { selectedPerson } = get();
     set({ isPairingWearable: true });
     try {
@@ -232,6 +238,7 @@ export const useHealthStore = create<HealthState>((set, get) => ({
         brand,
         device_name: deviceName,
         connection_type: connectionType,
+        battery_level: batteryLevel,
       });
 
       set({
@@ -259,7 +266,12 @@ export const useHealthStore = create<HealthState>((set, get) => ({
   },
 
   // Wearables Real-time Ingestion Sync
-  syncWearableData: async () => {
+  syncWearableData: async (options?: {
+    heart_rate?: number;
+    battery_level?: number;
+    steps?: number;
+    simulate_active_run?: boolean;
+  }) => {
     const { selectedPerson, wearableStatus } = get();
     set({ isSyncingWearable: true });
     try {
@@ -267,7 +279,10 @@ export const useHealthStore = create<HealthState>((set, get) => ({
       const res = await healthApi.syncWearables({
         person_name: selectedPerson,
         source: sourceName,
-        simulate_active_run: true,
+        simulate_active_run: options?.simulate_active_run ?? false,
+        heart_rate: options?.heart_rate,
+        battery_level: options?.battery_level,
+        steps: options?.steps,
       });
 
       set((state) => ({
@@ -275,7 +290,7 @@ export const useHealthStore = create<HealthState>((set, get) => ({
         wearableStatus: {
           ...state.wearableStatus,
           last_synced: 'Just now',
-          battery_level: Math.max(10, state.wearableStatus.battery_level - 1),
+          battery_level: options?.battery_level !== undefined ? options.battery_level : state.wearableStatus.battery_level,
         },
         plan: res.updatedSession
           ? state.plan.map((s) => (s.id === res.updatedSession.id ? res.updatedSession : s))

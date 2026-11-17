@@ -100,6 +100,13 @@ export const HealthScreen: React.FC = () => {
   const [phoneRunKm, setPhoneRunKm] = useState(0.0);
   const [gpsWatchId, setGpsWatchId] = useState<number | null>(null);
 
+  // Real Web Bluetooth GATT States
+  const [liveBleDevice, setLiveBleDevice] = useState<any>(null);
+  const [liveGattServer, setLiveGattServer] = useState<any>(null);
+  const [liveBleBpm, setLiveBleBpm] = useState<number | null>(null);
+  const [liveBleBattery, setLiveBleBattery] = useState<number | null>(null);
+  const [isStreamingBle, setIsStreamingBle] = useState(false);
+
   useEffect(() => {
     fetchDashboard();
   }, [fetchDashboard]);
@@ -226,37 +233,175 @@ export const HealthScreen: React.FC = () => {
     }
   };
 
-  // Real Web Bluetooth Discovery via Chrome
-  const handleScanRealBluetooth = async () => {
+  // Web Bluetooth GATT Direct Hardware Connection & Live Telemetry Streaming
+  const connectToBleDevice = async (device: any) => {
+    let batteryLevel: number | undefined;
+
+    try {
+      showToast(`Connecting to ${device.name || 'Smartwatch'} via Bluetooth GATT...`, 'info');
+      const server = await device.gatt?.connect();
+      if (server) {
+        setLiveGattServer(server);
+        setLiveBleDevice(device);
+
+        device.addEventListener('gattserverdisconnected', () => {
+          showToast(`${device.name || 'Smartwatch'} disconnected`, 'warning');
+          setLiveGattServer(null);
+          setLiveBleDevice(null);
+          setIsStreamingBle(false);
+          setLiveBleBpm(null);
+        });
+
+        // 1. Read Battery Service (0x180F -> 0x2A19)
+        try {
+          const battService = await server.getPrimaryService('battery_service');
+          const battChar = await battService.getCharacteristic('battery_level');
+          const val = await battChar.readValue();
+          batteryLevel = val.getUint8(0);
+          setLiveBleBattery(batteryLevel ?? null);
+        } catch (e) {
+          console.log('No standard battery service on device');
+        }
+
+        // 2. Read & Stream Heart Rate Measurement (0x180D -> 0x2A37)
+        try {
+          const hrService = await server.getPrimaryService('heart_rate');
+          const hrChar = await hrService.getCharacteristic('heart_rate_measurement');
+          await hrChar.startNotifications();
+          setIsStreamingBle(true);
+          hrChar.addEventListener('characteristicvaluechanged', (event: any) => {
+            const val = event.target.value;
+            const flags = val.getUint8(0);
+            const is16Bit = flags & 0x1;
+            const bpm = is16Bit ? val.getUint16(1, true) : val.getUint8(1);
+            setLiveBleBpm(bpm);
+          });
+          showToast(`🟢 Streaming live heart rate from ${device.name}!`, 'success');
+        } catch (e) {
+          console.log('No standard HR service on this device or bonding required');
+        }
+      }
+    } catch (gattErr: any) {
+      console.warn('GATT connection notice:', gattErr);
+    }
+
+    const brand = device.name ? device.name.split(' ')[0] : 'Smartwatch';
+    const msg = await pairAndConnectDevice(brand, device.name || 'Bluetooth Smartwatch', 'bluetooth_ble', batteryLevel);
+    showToast(msg, 'success');
+    closeConnectModal();
+  };
+
+  // A. Smartwatch HR Scanner (Filters ONLY real smartwatches / heart rate bands)
+  const handleScanSmartwatchHR = async () => {
     if (typeof navigator !== 'undefined' && (navigator as any).bluetooth) {
       try {
-        showToast('Opening Bluetooth device scanner...', 'info');
+        showToast('Scanning for Smartwatches broadcasting Heart Rate (BLE 0x180D)...', 'info');
         const device = await (navigator as any).bluetooth.requestDevice({
-          acceptAllDevices: true,
-          optionalServices: ['heart_rate', 'battery_service', 0x180D, 0x180F],
+          filters: [
+            { services: ['heart_rate'] },
+          ],
+          optionalServices: ['battery_service', 'device_information', 0x180D, 0x180F, 0x180A],
         });
-        if (device && device.name) {
-          const brand = device.name.split(' ')[0] || 'Smartwatch';
-          setCustomDeviceName(device.name);
-          setSelectedBrand(brand);
-          showToast(`Connecting to ${device.name}...`, 'info');
-          const msg = await pairAndConnectDevice(brand, device.name, 'bluetooth_ble');
-          showToast(msg, 'success');
+        if (device) {
+          await connectToBleDevice(device);
         }
       } catch (err: any) {
         if (err.name !== 'NotFoundError') {
-          showToast(err.message || 'Bluetooth connection failed', 'warning');
+          showToast(`BLE Scan: ${err.message || 'Cancelled'}`, 'warning');
         }
       }
     } else {
-      showToast('Web Bluetooth available on Chrome/Edge on HTTPS or localhost', 'warning');
+      showToast('Web Bluetooth requires Chrome or Edge on HTTPS / localhost', 'warning');
+    }
+  };
+
+  // B. Scan All Bluetooth Devices (Unfiltered)
+  const handleScanAllBleDevices = async () => {
+    if (typeof navigator !== 'undefined' && (navigator as any).bluetooth) {
+      try {
+        showToast('Scanning all Bluetooth devices nearby...', 'info');
+        const device = await (navigator as any).bluetooth.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: ['heart_rate', 'battery_service', 'device_information', 0x180D, 0x180F, 0x180A],
+        });
+        if (device) {
+          await connectToBleDevice(device);
+        }
+      } catch (err: any) {
+        if (err.name !== 'NotFoundError') {
+          showToast(`BLE Scan: ${err.message || 'Cancelled'}`, 'warning');
+        }
+      }
+    } else {
+      showToast('Web Bluetooth requires Chrome or Edge on HTTPS / localhost', 'warning');
+    }
+  };
+
+  // 1-Click Direct Pair Trigger (from Dashboard button)
+  const handlePairWatch = async () => {
+    if (typeof navigator !== 'undefined' && (navigator as any).bluetooth) {
+      await handleScanSmartwatchHR();
+    } else {
+      scanDevices();
+      openConnectModal();
+    }
+  };
+
+  const handleDisconnectWatch = async () => {
+    try {
+      if (liveGattServer && liveGattServer.connected) {
+        liveGattServer.disconnect();
+      }
+    } catch (e) {
+      console.warn('Error disconnecting GATT server:', e);
+    }
+    setLiveGattServer(null);
+    setLiveBleDevice(null);
+    setLiveBleBpm(null);
+    setLiveBleBattery(null);
+    setIsStreamingBle(false);
+    try {
+      const msg = await disconnectWearableDevice();
+      showToast(msg, 'info');
+    } catch (e: any) {
+      showToast('Watch disconnected', 'info');
+    }
+  };
+
+  const handleConnectDiscoveredDevice = async (dev: { name: string; brand: string }) => {
+    try {
+      showToast(`Connecting to ${dev.name}...`, 'info');
+      const brand = dev.brand || dev.name.split(' ')[0] || 'Smartwatch';
+      const msg = await pairAndConnectDevice(brand, dev.name, 'bluetooth_ble');
+      showToast(msg, 'success');
+      closeConnectModal();
+    } catch (e: any) {
+      showToast('Failed to connect watch', 'warning');
+    }
+  };
+
+  const handleConnectManual = async () => {
+    const trimmed = customDeviceName.trim();
+    if (!trimmed) return;
+    try {
+      const brand = trimmed.split(' ')[0] || 'Smartwatch';
+      const msg = await pairAndConnectDevice(brand, trimmed, 'bluetooth_ble');
+      showToast(msg, 'success');
+      setCustomDeviceName('');
+      closeConnectModal();
+    } catch (e: any) {
+      showToast('Failed to connect watch', 'warning');
     }
   };
 
   // 1. Wearables Telemetry Sync Action
   const handleSyncWearable = async () => {
     try {
-      const msg = await syncWearableData();
+      const msg = await syncWearableData({
+        heart_rate: liveBleBpm ?? undefined,
+        battery_level: liveBleBattery ?? undefined,
+        simulate_active_run: false,
+      });
       showToast(msg, 'success');
     } catch (err: any) {
       showToast('Could not sync wearable telemetry', 'warning');
@@ -419,13 +564,22 @@ export const HealthScreen: React.FC = () => {
                       {wearableStatus.connected ? wearableStatus.device_name : 'No Watch Connected'}
                     </Text>
                     {wearableStatus.connected && (
-                      <Text style={styles.batteryBadge}>{wearableStatus.battery_level}% 🔋</Text>
+                      <Text style={styles.batteryBadge}>
+                        {liveBleBattery !== null ? liveBleBattery : wearableStatus.battery_level}% 🔋
+                      </Text>
+                    )}
+                    {liveBleBpm !== null && (
+                      <View style={styles.livePulsePill}>
+                        <Text style={styles.livePulsePillText}>❤️ {liveBleBpm} bpm</Text>
+                      </View>
                     )}
                   </View>
                   <Text style={styles.wearableSub}>
                     {wearableStatus.connected
-                      ? `${wearableStatus.sync_mode} · Last sync: ${wearableStatus.last_synced}`
-                      : 'Pair your Garmin, Apple Watch, Noise, Boat, or Samsung watch'}
+                      ? isStreamingBle
+                        ? `🟢 Live BLE Stream Active · Last sync: ${wearableStatus.last_synced}`
+                        : `${wearableStatus.sync_mode} · Last sync: ${wearableStatus.last_synced}`
+                      : 'Pair your Garmin, Apple Watch, boAt, Noise, or fitness tracker'}
                   </Text>
                 </View>
 
@@ -447,8 +601,7 @@ export const HealthScreen: React.FC = () => {
                       <TouchableOpacity
                         style={styles.pairConfigBtn}
                         onPress={() => {
-                          setSelectedBrand(wearableStatus.brand || 'Garmin');
-                          setCustomDeviceName(wearableStatus.device_name || '');
+                          scanDevices();
                           openConnectModal();
                         }}
                       >
@@ -458,11 +611,7 @@ export const HealthScreen: React.FC = () => {
                   ) : (
                     <TouchableOpacity
                       style={styles.connectMainBtn}
-                      onPress={() => {
-                        setSelectedBrand('Noise');
-                        setCustomDeviceName('');
-                        openConnectModal();
-                      }}
+                      onPress={handlePairWatch}
                     >
                       <Text style={styles.connectMainBtnText}>🔗 Pair Watch</Text>
                     </TouchableOpacity>
@@ -563,13 +712,23 @@ export const HealthScreen: React.FC = () => {
                 <Text style={styles.badgeText}>
                   {trackingSource === 'phone'
                     ? 'Smartphone Sensors (Motion + PPG)'
+                    : liveBleBpm !== null
+                    ? `🟢 Live Wrist BLE (${wearableStatus.device_name})`
                     : vitals.source || 'No Telemetry'}
                 </Text>
               </View>
               <View style={styles.statsRow}>
                 <View style={styles.statBox}>
-                  <Text style={styles.statVal}>{vitals.resting_hr > 0 ? vitals.resting_hr : '--'}</Text>
-                  <Text style={styles.statLabel}>Resting HR (bpm)</Text>
+                  <Text style={styles.statVal}>
+                    {liveBleBpm !== null
+                      ? `${liveBleBpm}`
+                      : vitals.resting_hr > 0
+                      ? vitals.resting_hr
+                      : '--'}
+                  </Text>
+                  <Text style={styles.statLabel}>
+                    {liveBleBpm !== null ? '❤️ Live Pulse (bpm)' : 'Resting HR (bpm)'}
+                  </Text>
                 </View>
                 <View style={styles.statDivider} />
                 <View style={styles.statBox}>
@@ -1114,7 +1273,7 @@ export const HealthScreen: React.FC = () => {
         )}
       </ScrollView>
 
-      {/* Pair / Connect Watch Modal */}
+      {/* Streamlined 1-Click Smartwatch Auto-Pairing Modal */}
       <Modal
         visible={isConnectModalOpen}
         animationType="slide"
@@ -1126,91 +1285,66 @@ export const HealthScreen: React.FC = () => {
             {/* Modal Header */}
             <View style={styles.modalHeader}>
               <View>
-                <Text style={styles.modalTitle}>Connect Your Watch</Text>
-                <Text style={styles.modalSubtitle}>Pair your own smartwatch via Bluetooth or Health Sync</Text>
+                <Text style={styles.modalTitle}>Pair Your Smartwatch</Text>
+                <Text style={styles.modalSubtitle}>Auto-detecting active Bluetooth devices nearby</Text>
               </View>
               <TouchableOpacity onPress={closeConnectModal} style={styles.modalCloseBtn}>
                 <Text style={styles.modalCloseText}>✕</Text>
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
-              {/* 1. Brand Selection */}
-              <Text style={styles.modalSectionLabel}>1. Select Brand / Ecosystem</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.brandRow}>
-                {['Noise', 'boAt', 'Apple Watch', 'Garmin', 'Samsung Galaxy Watch', 'Amazfit', 'Fitbit', 'Fire-Boltt', 'Other'].map((b) => (
-                  <TouchableOpacity
-                    key={b}
-                    style={[
-                      styles.brandChip,
-                      selectedBrand === b && styles.brandChipActive,
-                    ]}
-                    onPress={() => {
-                      setSelectedBrand(b);
-                      scanDevices(b);
-                    }}
-                  >
-                    <Text
-                      style={[
-                        styles.brandChipText,
-                        selectedBrand === b && styles.brandChipTextActive,
-                      ]}
-                    >
-                      {b === 'Apple Watch' ? '🍏 ' : b === 'Garmin' ? '🏃 ' : b === 'Noise' ? '⚡ ' : b === 'boAt' ? '⚓ ' : b === 'Samsung Galaxy Watch' ? '⌚ ' : '🕒 '}
-                      {b}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-
-              {/* 2. Connection Mode */}
-              <Text style={styles.modalSectionLabel}>2. Connection Method</Text>
-              <View style={styles.protocolRow}>
-                <TouchableOpacity
-                  style={[
-                    styles.protocolCard,
-                    connectionType === 'bluetooth_ble' && styles.protocolCardActive,
-                  ]}
-                  onPress={() => setConnectionType('bluetooth_ble')}
-                >
-                  <Text style={styles.protocolTitle}>📡 Bluetooth BLE</Text>
-                  <Text style={styles.protocolSub}>Direct real-time device pairing</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.protocolCard,
-                    connectionType === 'health_connect' && styles.protocolCardActive,
-                  ]}
-                  onPress={() => setConnectionType('health_connect')}
-                >
-                  <Text style={styles.protocolTitle}>☁️ Cloud Health Sync</Text>
-                  <Text style={styles.protocolSub}>Health Connect / Apple Health</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Real Web Bluetooth Button */}
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 440 }}>
+              {/* Option A: Dedicated Smartwatch HR BLE Scanner (Filters out TVs, Laptops, etc.) */}
               <TouchableOpacity
-                style={styles.realBleButton}
-                onPress={handleScanRealBluetooth}
+                style={styles.realBleHeroCard}
+                onPress={handleScanSmartwatchHR}
               >
-                <Text style={styles.realBleButtonText}>
-                  📡 Scan Real Bluetooth Smartwatch (Chrome BLE)
-                </Text>
+                <View style={styles.realBleIconCircle}>
+                  <Text style={{ fontSize: 20 }}>⌚</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.realBleHeroTitle}>Scan Smartwatch (Heart Rate BLE 0x180D)</Text>
+                  <Text style={styles.realBleHeroSub}>
+                    Filters strictly for smartwatches & HR bands. No TV/beacon clutter.
+                  </Text>
+                </View>
+                <Text style={styles.realBleArrow}>→</Text>
               </TouchableOpacity>
 
-              {/* 3. Discovered Nearby Devices */}
+              {/* Option B: Scan All Bluetooth Devices (Unfiltered BLE scan) */}
+              <TouchableOpacity
+                style={styles.realBleHeroCardSecondary}
+                onPress={handleScanAllBleDevices}
+              >
+                <View style={[styles.realBleIconCircle, { backgroundColor: '#e2e8f0' }]}>
+                  <Text style={{ fontSize: 18 }}>📡</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.realBleHeroTitle, { color: colors.ink }]}>
+                    Scan All Bluetooth Devices (Raw BLE)
+                  </Text>
+                  <Text style={styles.realBleHeroSub}>
+                    Detects any nearby BLE device (pick your smartwatch name)
+                  </Text>
+                </View>
+                <Text style={[styles.realBleArrow, { color: colors.inkMuted }]}>→</Text>
+              </TouchableOpacity>
+
+              {/* 2. Detected Smartwatches List (Tap to Pair!) */}
               <View style={styles.scannerHeaderRow}>
-                <Text style={styles.modalSectionLabel}>3. Discovered Devices (Nearby)</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <View style={styles.pulsingGreenDot} />
+                  <Text style={styles.modalSectionLabel}>Nearby Smartwatches Found</Text>
+                </View>
                 <TouchableOpacity
                   style={styles.refreshScanBtn}
-                  onPress={() => scanDevices(selectedBrand)}
+                  onPress={() => scanDevices()}
                   disabled={isScanningDevices}
                 >
                   {isScanningDevices ? (
                     <ActivityIndicator size="small" color={colors.ink} />
                   ) : (
-                    <Text style={styles.refreshScanText}>🔄 Scan Again</Text>
+                    <Text style={styles.refreshScanText}>🔄 Refresh</Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -1218,90 +1352,89 @@ export const HealthScreen: React.FC = () => {
               {isScanningDevices ? (
                 <View style={styles.scanningBox}>
                   <ActivityIndicator size="small" color={colors.ink} />
-                  <Text style={styles.scanningText}>Searching for nearby {selectedBrand} Bluetooth devices...</Text>
+                  <Text style={styles.scanningText}>Listening for Bluetooth smartwatch signals...</Text>
                 </View>
               ) : (
                 <View style={styles.devicesList}>
                   {discoveredDevices.map((dev) => (
                     <TouchableOpacity
                       key={dev.id}
-                      style={[
-                        styles.deviceItem,
-                        customDeviceName === dev.name && styles.deviceItemActive,
-                      ]}
-                      onPress={() => setCustomDeviceName(dev.name)}
+                      style={styles.deviceItem}
+                      onPress={() => handleConnectDiscoveredDevice(dev)}
                     >
+                      <View style={styles.watchIconWrap}>
+                        <Text style={{ fontSize: 18 }}>⌚</Text>
+                      </View>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.deviceItemTitle}>{dev.name}</Text>
-                        <Text style={styles.deviceItemSub}>{dev.signal} · Ready to connect</Text>
+                        <Text style={styles.deviceItemSub}>{dev.signal} · Bluetooth BLE</Text>
                       </View>
-                      <View
-                        style={[
-                          styles.deviceSelectDot,
-                          customDeviceName === dev.name && styles.deviceSelectDotActive,
-                        ]}
-                      />
+                      <View style={styles.oneTapConnectBadge}>
+                        <Text style={styles.oneTapConnectText}>Connect ⚡</Text>
+                      </View>
                     </TouchableOpacity>
                   ))}
                 </View>
               )}
 
-              {/* 4. Custom Device Name Input */}
-              <Text style={styles.modalSectionLabel}>Or Enter Watch Name Manually</Text>
-              <TextInput
-                style={styles.deviceInput}
-                placeholder="e.g. Noise ColorFit Pro 5, Apple Watch Series 9"
-                placeholderTextColor={colors.inkMuted}
-                value={customDeviceName}
-                onChangeText={setCustomDeviceName}
-              />
+              {/* 3. Real Watch Connection Tips */}
+              <View style={styles.bleHelpCard}>
+                <Text style={styles.bleHelpTitle}>💡 Original Watch Pairing Tips:</Text>
+                <Text style={styles.bleHelpItem}>
+                  • <Text style={{ fontWeight: 'bold' }}>Garmin / Coros / Polar:</Text> Go to Settings ➔ Wrist Heart Rate ➔ enable <Text style={{ fontStyle: 'italic' }}>Broadcast Heart Rate</Text>.
+                </Text>
+                <Text style={styles.bleHelpItem}>
+                  • <Text style={{ fontWeight: 'bold' }}>boAt / Noise / Fire-Boltt:</Text> Disconnect from your phone's app first so the watch enters pairing mode.
+                </Text>
+                <Text style={styles.bleHelpItem}>
+                  • <Text style={{ fontWeight: 'bold' }}>Apple Watch / Wear OS:</Text> Open "HeartCast" or "Heart Rate Broadcast" app on the watch.
+                </Text>
+                <Text style={styles.bleHelpItem}>
+                  • <Text style={{ fontWeight: 'bold' }}>Instant Test with Phone:</Text> Install free app <Text style={{ fontStyle: 'italic' }}>"BLE Peripheral Simulator"</Text> on any phone to test live pulse transmission!
+                </Text>
+              </View>
+
+              {/* 4. Minimal Fallback (Only if watch Bluetooth is hidden) */}
+              <View style={styles.manualEntrySection}>
+                <Text style={styles.manualEntryLabel}>Watch not showing up? Enter name manually:</Text>
+                <View style={styles.manualEntryRow}>
+                  <TextInput
+                    style={styles.manualInput}
+                    placeholder="e.g. Noise ColorFit Pro 5, boAt Wave"
+                    placeholderTextColor={colors.inkMuted}
+                    value={customDeviceName}
+                    onChangeText={setCustomDeviceName}
+                  />
+                  <TouchableOpacity
+                    style={[
+                      styles.manualConnectBtn,
+                      (!customDeviceName.trim() || isPairingWearable) && styles.manualConnectBtnDisabled,
+                    ]}
+                    disabled={!customDeviceName.trim() || isPairingWearable}
+                    onPress={handleConnectManual}
+                  >
+                    <Text style={styles.manualConnectText}>Connect</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
             </ScrollView>
 
-            {/* Modal Actions */}
-            <View style={styles.modalActionsRow}>
-              {wearableStatus.connected && (
+            {/* Modal Footer / Disconnect if connected */}
+            {wearableStatus.connected && (
+              <View style={{ marginTop: spacing.md }}>
                 <TouchableOpacity
                   style={styles.disconnectBtn}
                   onPress={async () => {
-                    try {
-                      const msg = await disconnectWearableDevice();
-                      showToast(msg, 'info');
-                      closeConnectModal();
-                    } catch (e: any) {
-                      showToast('Failed to disconnect', 'warning');
-                    }
+                    await handleDisconnectWatch();
+                    closeConnectModal();
                   }}
                 >
-                  <Text style={styles.disconnectBtnText}>Disconnect</Text>
+                  <Text style={styles.disconnectBtnText}>
+                    Disconnect Current Watch ({wearableStatus.device_name})
+                  </Text>
                 </TouchableOpacity>
-              )}
-
-              <TouchableOpacity
-                style={[
-                  styles.pairSubmitBtn,
-                  (!customDeviceName.trim() || isPairingWearable) && styles.pairSubmitBtnDisabled,
-                ]}
-                disabled={!customDeviceName.trim() || isPairingWearable}
-                onPress={async () => {
-                  try {
-                    const msg = await pairAndConnectDevice(
-                      selectedBrand,
-                      customDeviceName.trim(),
-                      connectionType
-                    );
-                    showToast(msg, 'success');
-                  } catch (e: any) {
-                    showToast('Failed to connect watch', 'warning');
-                  }
-                }}
-              >
-                {isPairingWearable ? (
-                  <ActivityIndicator size="small" color="#ffffff" />
-                ) : (
-                  <Text style={styles.pairSubmitBtnText}>✨ Pair & Connect</Text>
-                )}
-              </TouchableOpacity>
-            </View>
+              </View>
+            )}
           </View>
         </View>
       </Modal>
@@ -2327,5 +2460,153 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontFamily.uiMedium,
     color: colors.ink,
     marginBottom: 4,
+  },
+  realBleHeroCard: {
+    backgroundColor: '#ebf3fe',
+    borderWidth: 1.5,
+    borderColor: '#b9d5fb',
+    padding: spacing.md,
+    borderRadius: radii.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginVertical: spacing.xs,
+  },
+  realBleIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#ffffff',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  realBleHeroTitle: {
+    fontSize: 13.5,
+    fontFamily: typography.fontFamily.uiMedium,
+    color: '#0d6efd',
+  },
+  realBleHeroSub: {
+    fontSize: 11,
+    color: colors.inkSecondary,
+    marginTop: 2,
+  },
+  realBleArrow: {
+    fontSize: 18,
+    color: '#0d6efd',
+    fontWeight: 'bold',
+  },
+  pulsingGreenDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#34a853',
+  },
+  watchIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  oneTapConnectBadge: {
+    backgroundColor: colors.ink,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radii.pill,
+  },
+  oneTapConnectText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontFamily: typography.fontFamily.uiMedium,
+  },
+  manualEntrySection: {
+    marginTop: spacing.md,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderLight,
+  },
+  manualEntryLabel: {
+    fontSize: 11,
+    fontFamily: typography.fontFamily.uiMedium,
+    color: colors.muted,
+    marginBottom: spacing.xs,
+  },
+  manualEntryRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  manualInput: {
+    flex: 1,
+    backgroundColor: colors.surfaceWarm,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 7,
+    fontSize: 12,
+    color: colors.ink,
+  },
+  manualConnectBtn: {
+    backgroundColor: colors.ink,
+    paddingHorizontal: 16,
+    borderRadius: radii.md,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  manualConnectBtnDisabled: {
+    opacity: 0.5,
+  },
+  manualConnectText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontFamily: typography.fontFamily.uiMedium,
+  },
+  realBleHeroCardSecondary: {
+    backgroundColor: '#f1f5f9',
+    borderWidth: 1.5,
+    borderColor: '#cbd5e1',
+    padding: spacing.md,
+    borderRadius: radii.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginVertical: spacing.xs,
+  },
+  livePulsePill: {
+    backgroundColor: '#fee2e2',
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: radii.pill,
+    marginLeft: 6,
+  },
+  livePulsePillText: {
+    fontSize: 11,
+    color: '#b91c1c',
+    fontFamily: typography.fontFamily.uiMedium,
+  },
+  bleHelpCard: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: radii.md,
+    padding: spacing.sm,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  bleHelpTitle: {
+    fontSize: 12,
+    fontFamily: typography.fontFamily.uiMedium,
+    color: colors.ink,
+    marginBottom: 4,
+  },
+  bleHelpItem: {
+    fontSize: 11,
+    color: colors.inkSecondary,
+    lineHeight: 16,
+    marginBottom: 3,
   },
 });

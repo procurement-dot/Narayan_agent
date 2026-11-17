@@ -62,6 +62,19 @@
       "energy_level": "Good",
       "source": "Smartphone Camera PPG Pulse Meter",
       "created_at": "2026-11-04T07:33:41.193Z"
+    },
+    {
+      "id": "vit-1794806800968",
+      "person_name": "Self",
+      "log_date": "2026-11-16",
+      "resting_hr": 68,
+      "sleep_duration_minutes": 445,
+      "recovery_score": 76,
+      "steps_count": 8420,
+      "hydration_liters": 3.2,
+      "energy_level": "Good",
+      "source": "Smartphone Camera PPG Pulse Meter",
+      "created_at": "2026-11-16T05:26:40.969Z"
     }
   ],
   "goals": [
@@ -90,9 +103,9 @@
       "status": "upcoming",
       "scheduled_time": "06:30",
       "intensity": "Low",
-      "synced_to_calendar": false,
+      "synced_to_calendar": true,
       "created_at": "2026-11-04T07:20:00.000Z",
-      "updated_at": "2026-11-04T07:20:00.000Z"
+      "updated_at": "2026-11-16T05:29:46.013Z"
     },
     {
       "id": "ts-2",
@@ -146,9 +159,9 @@
       "status": "upcoming",
       "scheduled_time": "06:30",
       "intensity": "Moderate",
-      "synced_to_calendar": false,
+      "synced_to_calendar": true,
       "created_at": "2026-11-04T07:20:00.000Z",
-      "updated_at": "2026-11-04T07:20:00.000Z"
+      "updated_at": "2026-11-16T09:49:45.223Z"
     },
     {
       "id": "ts-6",
@@ -182,5 +195,62 @@
   "events": [],
   "journals": [],
   "documents": [],
-  "meals": []
+  "meals": [
+    {
+      "id": "meal-1794806928183",
+      "person_name": "Self",
+      "meal_title": "Wholesome Indian Thali for Recovery",
+      "calories": 720,
+      "protein_g": 32,
+      "carbs_g": 105,
+      "fats_g": 20,
+      "fiber_g": 14,
+      "detected_items": [
+        "Jeera Rice (1.5 cups cooked, ~250g)",
+        "Dal (lentil stew, 1 cup, ~240g)",
+        "Paneer and Capsicum Curry (0.75 cup, ~180g)",
+        "Roti/Chapati (2 pieces, ~120g)",
+        "Raita (yogurt dip, 0.5 cup, ~120g)"
+      ],
+      "micronutrients": [
+        "Iron",
+        "Potassium",
+        "Calcium",
+        "Vitamin C",
+        "B Vitamins",
+        "Magnesium",
+        "Zinc"
+      ],
+      "runner_insight": "This meal is excellent for post-training recovery, providing ample complex carbohydrates from rice and roti for rapid glycogen replenishment, crucial for tomorrow's energy. The combination of dal, paneer, and yogurt delivers high-quality protein to support muscle repair and synthesis, optimizing adaptation from your workout.",
+      "logged_at": "2026-11-16"
+    },
+    {
+      "id": "meal-1793961382721",
+      "person_name": "Self",
+      "meal_title": "Wholesome Indian Thali for Recovery",
+      "calories": 720,
+      "protein_g": 32,
+      "carbs_g": 95,
+      "fats_g": 25,
+      "fiber_g": 12,
+      "detected_items": [
+        "Cumin Rice (Jeera Rice) - 1.5 cups (approx. 250g cooked)",
+        "Dal (Lentil Curry) - 1 cup (approx. 200g)",
+        "Roti/Chapati - 2 pieces (approx. 60g each)",
+        "Paneer and Capsicum Sabzi (Curry) - 0.75 cup (approx. 150g)",
+        "Raita (Yogurt Dip with spices) - 0.5 cup (approx. 120g)"
+      ],
+      "micronutrients": [
+        "Iron",
+        "Potassium",
+        "Calcium",
+        "Vitamin C",
+        "Magnesium",
+        "Zinc",
+        "B Vitamins"
+      ],
+      "runner_insight": "This thali provides an excellent balance of complex carbohydrates for rapid glycogen replenishment, crucial after a long training run. The combination of dal, paneer, and yogurt offers high-quality protein to support muscle repair and synthesis, ensuring the runner is ready for tomorrow's demanding workout.",
+      "logged_at": "2026-11-06"
+    }
+  ]
 }

@@ -12,12 +12,12 @@
   "external_apps": [
     {
       "id": "ext-infra",
-      "name": "Infra Project Tracker",
+      "name": "SIPS",
       "app_key": "infra_tracker",
       "subtitle": "Civil construction, site inspections & contractor milestones",
       "tag": "Civil & Infra",
-      "deploy_url": "",
-      "status": "ready",
+      "deploy_url": "https://sips-sports.vercel.app/",
+      "status": "connected",
       "summary_metrics": {
         "activeProjects": 0,
         "onTrack": 0,
