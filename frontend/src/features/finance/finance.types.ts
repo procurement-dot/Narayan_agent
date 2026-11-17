@@ -32,3 +32,14 @@ export interface FinanceAlert {
   due: string;
   desc: string;
 }
+
+export interface RetirementParams {
+  age: number;
+  retire: number;
+  corpus: number;
+  sip: number;
+  returnRate: number;
+  inflation: number;
+}
+
+export type RecordItem = [string, string, string, string]; // [name, masked, detail, docType]
