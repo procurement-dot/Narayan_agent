@@ -165,21 +165,27 @@ export const emailController = {
     const { body } = req.body;
     const userId = (req as any).userId || '00000000-0000-0000-0000-000000000001';
 
-    if (!body) {
+    if (body === undefined || body === null) {
       return res.status(400).json({ error: 'Draft body is required' });
     }
 
-    const result = await emailService.saveDraft(id, userId, body);
+    const safeBody = typeof body === 'string' ? body : '';
+    const result = await emailService.saveDraft(id, userId, safeBody);
     res.json({ message: 'Draft saved locally; nothing sent.', result });
   },
 
   async generateDraft(req: Request, res: Response) {
     const { id } = req.params;
-    const { instruction } = req.body;
+    const { instruction, subject, content, fromName, fromEmail } = req.body;
     const userId = (req as any).userId || '00000000-0000-0000-0000-000000000001';
 
     try {
-      const result = await emailService.generateDraft(id, userId, instruction);
+      const result = await emailService.generateDraft(id, userId, instruction, {
+        subject,
+        content,
+        fromName,
+        fromEmail,
+      });
       res.json(result);
     } catch (err: any) {
       console.error('Failed to generate draft:', err);

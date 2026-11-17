@@ -43,13 +43,45 @@ export const EmailScreen: React.FC = () => {
     checkOAuthStatus,
     generateDraft,
     sendReply,
+    syncEmails,
+    isConnected,
   } = useEmailUiStore();
 
-  // Load initial data on screen mount
+  // Load initial data and run real-time auto-sync
   useEffect(() => {
     checkOAuthStatus();
     fetchSummary();
     fetchEmails();
+
+    // Instant silent sync on mount
+    syncEmails({ silent: true }).catch(() => {});
+
+    // Periodic auto-sync every 10 seconds so any incoming email appears immediately
+    const pollTimer = setInterval(() => {
+      syncEmails({ silent: true })
+        .then((res) => {
+          if (res && res.synced > 0) {
+            showToast(`New email received: ${res.synced} new message${res.synced > 1 ? 's' : ''}`, 'info');
+          }
+        })
+        .catch(() => {});
+    }, 10000);
+
+    // Auto-sync when user returns/focuses on the browser tab
+    const handleFocus = () => {
+      syncEmails({ silent: true }).catch(() => {});
+    };
+
+    if (typeof window !== 'undefined' && window.addEventListener) {
+      window.addEventListener('focus', handleFocus);
+    }
+
+    return () => {
+      clearInterval(pollTimer);
+      if (typeof window !== 'undefined' && window.removeEventListener) {
+        window.removeEventListener('focus', handleFocus);
+      }
+    };
   }, []);
 
   // Filter emails based on the active tab

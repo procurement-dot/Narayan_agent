@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { useSettingsStore } from './settings.store';
+import { useEmailUiStore } from '../email/store/emailUi.store';
 import { AppHeader } from '../navigation/AppHeader';
 import { AiModelChoice } from './settings.types';
 import { colors, radii, spacing, typography } from '../../shared/theme/tokens';
@@ -30,7 +31,59 @@ export const SettingsScreen: React.FC = () => {
     costInr,
     toggleConnection,
   } = useSettingsStore();
+  const {
+    isConnected: isGmailConnected,
+    connectedEmail,
+    connectGmail,
+    disconnectGmail,
+    checkOAuthStatus,
+  } = useEmailUiStore();
   const { showToast } = useToast();
+
+  useEffect(() => {
+    checkOAuthStatus();
+  }, []);
+
+  const handleToggleConnection = async (item: (typeof connections)[0]) => {
+    if (item.id === 'gmail') {
+      if (isGmailConnected) {
+        try {
+          await disconnectGmail();
+          showToast('Gmail disconnected successfully', 'info');
+        } catch (err: any) {
+          showToast('Failed to disconnect Gmail', 'warning');
+        }
+      } else {
+        try {
+          await connectGmail();
+        } catch (err: any) {
+          showToast('Could not open Google login', 'warning');
+        }
+      }
+      return;
+    }
+
+    if (item.id === 'calendar') {
+      if (isGmailConnected) {
+        showToast('Google Calendar is active with your Google account', 'info');
+      } else {
+        try {
+          await connectGmail();
+        } catch (err: any) {
+          showToast('Could not open Google login', 'warning');
+        }
+      }
+      return;
+    }
+
+    toggleConnection(item.id);
+    showToast(
+      item.connected
+        ? `Disconnected ${item.name}`
+        : `Connected ${item.name} (Simulation)`,
+      'info'
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -50,38 +103,41 @@ export const SettingsScreen: React.FC = () => {
           <Text style={styles.cardKicker}>DATA INTEGRATIONS</Text>
           <Text style={styles.cardTitle}>Connections & Permissions</Text>
           <View style={styles.connectionList}>
-            {connections.map((item) => (
-              <View key={item.id} style={styles.connRow}>
-                <View style={styles.connInfo}>
-                  <Text style={styles.connName}>{item.name}</Text>
-                  <Text style={styles.connDesc}>{item.desc}</Text>
-                </View>
-                <TouchableOpacity
-                  style={[
-                    styles.connBadge,
-                    item.connected ? styles.connBadgeActive : styles.connBadgeInactive,
-                  ]}
-                  onPress={() => {
-                    toggleConnection(item.id);
-                    showToast(
-                      item.connected
-                        ? `Disconnected ${item.name}`
-                        : `Connected ${item.name} (Simulation)`,
-                      'info'
-                    );
-                  }}
-                >
-                  <Text
+            {connections.map((item) => {
+              const isConnected =
+                item.id === 'gmail' || item.id === 'calendar'
+                  ? isGmailConnected
+                  : item.connected;
+              const displayDesc =
+                (item.id === 'gmail' || item.id === 'calendar') && isGmailConnected && connectedEmail
+                  ? `${item.desc} · Connected as ${connectedEmail}`
+                  : item.desc;
+
+              return (
+                <View key={item.id} style={styles.connRow}>
+                  <View style={styles.connInfo}>
+                    <Text style={styles.connName}>{item.name}</Text>
+                    <Text style={styles.connDesc}>{displayDesc}</Text>
+                  </View>
+                  <TouchableOpacity
                     style={[
-                      styles.connBadgeText,
-                      item.connected && styles.connBadgeTextActive,
+                      styles.connBadge,
+                      isConnected ? styles.connBadgeActive : styles.connBadgeInactive,
                     ]}
+                    onPress={() => handleToggleConnection(item)}
                   >
-                    {item.connected ? 'Connected' : 'Connect'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            ))}
+                    <Text
+                      style={[
+                        styles.connBadgeText,
+                        isConnected && styles.connBadgeTextActive,
+                      ]}
+                    >
+                      {isConnected ? 'Connected' : 'Connect'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
           </View>
           <Text style={styles.disclaimerText}>
             Credentials and API keys must be entered through provider OAuth or secure native credential storage.

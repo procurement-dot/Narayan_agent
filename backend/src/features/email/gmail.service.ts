@@ -15,7 +15,8 @@ export interface ParsedGmailMessage {
 export const gmailService = {
   async fetchRecentEmails(
     auth: OAuth2Client,
-    maxResults = 15
+    maxResults = 15,
+    existingMsgIds?: Set<string>
   ): Promise<ParsedGmailMessage[]> {
     const gmail = google.gmail({ version: 'v1', auth });
 
@@ -31,28 +32,33 @@ export const gmailService = {
       return [];
     }
 
-    // 2. Fetch full details for each message in parallel (batched)
-    const parsedMessages: ParsedGmailMessage[] = [];
+    // Filter to only new messages not already saved in database
+    const newItems = existingMsgIds
+      ? messageList.filter((item) => item.id && !existingMsgIds.has(item.id))
+      : messageList;
 
-    for (const item of messageList) {
-      if (!item.id) continue;
-      try {
-        const full = await gmail.users.messages.get({
-          userId: 'me',
-          id: item.id,
-          format: 'full',
-        });
-
-        const parsed = this.parseMessage(full.data);
-        if (parsed) {
-          parsedMessages.push(parsed);
-        }
-      } catch (err) {
-        console.warn(`Failed to fetch message ${item.id}:`, err);
-      }
+    if (newItems.length === 0) {
+      return [];
     }
 
-    return parsedMessages;
+    // 2. Fetch full details for new messages concurrently in parallel
+    const results = await Promise.all(
+      newItems.map(async (item) => {
+        try {
+          const full = await gmail.users.messages.get({
+            userId: 'me',
+            id: item.id!,
+            format: 'full',
+          });
+          return this.parseMessage(full.data);
+        } catch (err) {
+          console.warn(`Failed to fetch message ${item.id}:`, err);
+          return null;
+        }
+      })
+    );
+
+    return results.filter((m): m is ParsedGmailMessage => m !== null);
   },
 
   parseMessage(msg: gmail_v1.Schema$Message): ParsedGmailMessage | null {

@@ -55,9 +55,9 @@ Instructions:
    - If "kind" is "noise", do not generate a proposal.
 
 3. Draft Reply:
-   - Write a calm, courteous, professional reply in Narayan's executive voice.
+   - Always write a calm, courteous, professional reply in Narayan's executive voice (2-3 sentences max).
    - Keep it concise, respectful, and clear.
-   - If "noise", leave draftReply empty ("").
+   - For announcements or newsletters, write a polite acknowledgment or expression of interest. Never leave draftReply empty.
 
 Respond ONLY with valid JSON matching this schema:
 {
@@ -82,7 +82,7 @@ Respond ONLY with valid JSON matching this schema:
         headers: {
           Authorization: `Bearer ${env.LLM_API_KEY}`,
           'Content-Type': 'application/json',
-          'HTTP-Referer': 'http://localhost:4000',
+          'HTTP-Referer': process.env.RENDER_EXTERNAL_URL || 'https://narayan-agent.onrender.com',
           'X-Title': 'NRYN Assistant',
         },
         body: JSON.stringify({
@@ -193,7 +193,7 @@ Instructions:
         headers: {
           Authorization: `Bearer ${env.LLM_API_KEY}`,
           'Content-Type': 'application/json',
-          'HTTP-Referer': 'http://localhost:4000',
+          'HTTP-Referer': process.env.RENDER_EXTERNAL_URL || 'https://narayan-agent.onrender.com',
           'X-Title': 'NRYN Assistant',
         },
         body: JSON.stringify({

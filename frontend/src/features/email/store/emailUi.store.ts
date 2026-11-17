@@ -39,7 +39,8 @@ interface EmailUiState {
   fetchSummary: () => Promise<void>;
   checkOAuthStatus: () => Promise<void>;
   connectGmail: () => Promise<void>;
-  syncEmails: () => Promise<{ synced: number; totalChecked: number } | null>;
+  disconnectGmail: () => Promise<void>;
+  syncEmails: (options?: { silent?: boolean }) => Promise<{ synced: number; totalChecked: number } | null>;
   saveDraft: (emailId: string, text: string) => Promise<void>;
   generateDraft: (emailId: string, instruction?: string) => Promise<string>;
   sendReply: (emailId: string, body: string) => Promise<{ success: boolean; message: string }>;
@@ -172,19 +173,59 @@ export const useEmailUiStore = create<EmailUiState>((set, get) => ({
     }
   },
 
-  syncEmails: async () => {
+  disconnectGmail: async () => {
     try {
-      set({ isSyncing: true });
+      set({ isLoading: true });
+      await emailApi.disconnectOAuth();
+      set({
+        isConnected: false,
+        connectedEmail: null,
+        emails: mockData.emails as EmailItem[],
+        summary: { requests: 3, lowSignal: 1, mergedMeetings: 2, connected: false, email: null },
+        mailDrafts: {},
+        mailStatus: {},
+      });
+
+      // Broadcast to other windows/tabs
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        try {
+          const bc = new BroadcastChannel('nryn_oauth');
+          bc.postMessage({ type: 'GMAIL_DISCONNECTED' });
+        } catch (e) {}
+        try {
+          localStorage.setItem('nryn_gmail_disconnected', String(Date.now()));
+        } catch (e) {}
+      }
+    } catch (err) {
+      console.error('Failed to disconnect Gmail:', err);
+      throw err;
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  syncEmails: async (options?: { silent?: boolean }) => {
+    try {
+      if (!options?.silent) {
+        set({ isSyncing: true });
+      }
       const res = await emailApi.syncEmails(15);
       // Refresh emails and summary
       await Promise.all([get().fetchEmails(), get().fetchSummary()]);
       return res.result;
     } catch (err: any) {
-      console.error('Failed to sync emails:', err);
+      if (!options?.silent) {
+        console.error('Failed to sync emails:', err);
+      }
       const msg = err.response?.data?.error || err.message || 'Sync failed';
-      throw new Error(msg);
+      if (!options?.silent) {
+        throw new Error(msg);
+      }
+      return null;
     } finally {
-      set({ isSyncing: false });
+      if (!options?.silent) {
+        set({ isSyncing: false });
+      }
     }
   },
 
@@ -203,7 +244,13 @@ export const useEmailUiStore = create<EmailUiState>((set, get) => ({
 
   generateDraft: async (emailId, instruction) => {
     try {
-      const res = await emailApi.generateDraft(emailId, instruction);
+      const email = get().emails.find((e) => e.id === emailId);
+      const res = await emailApi.generateDraft(emailId, {
+        instruction,
+        subject: email?.subject,
+        content: email?.content,
+        fromName: email?.name,
+      });
       if (res?.draft) {
         set((state) => ({
           mailDrafts: { ...state.mailDrafts, [emailId]: res.draft },
@@ -214,7 +261,8 @@ export const useEmailUiStore = create<EmailUiState>((set, get) => ({
       return '';
     } catch (err: any) {
       console.warn('Could not generate draft from backend:', err);
-      const fallback = 'Thank you for reaching out. I have reviewed the details and will follow up shortly.';
+      const email = get().emails.find((e) => e.id === emailId);
+      const fallback = `Thank you for reaching out regarding "${email?.subject || 'your email'}". I have reviewed the details and will follow up shortly.`;
       set((state) => ({
         mailDrafts: { ...state.mailDrafts, [emailId]: fallback },
         mailStatus: { ...state.mailStatus, [emailId]: 'Draft saved locally' },
@@ -330,14 +378,14 @@ if (typeof window !== 'undefined') {
   if (window.addEventListener) {
     // 1. window message event
     window.addEventListener('message', (event) => {
-      if (event.data?.type === 'GMAIL_CONNECTED') {
+      if (event.data?.type === 'GMAIL_CONNECTED' || event.data?.type === 'GMAIL_DISCONNECTED') {
         refreshAll();
       }
     });
 
     // 2. localStorage storage event (fired across tabs/windows)
     window.addEventListener('storage', (event) => {
-      if (event.key === 'nryn_gmail_connected') {
+      if (event.key === 'nryn_gmail_connected' || event.key === 'nryn_gmail_disconnected') {
         refreshAll();
       }
     });
@@ -348,7 +396,7 @@ if (typeof window !== 'undefined') {
     if ('BroadcastChannel' in window) {
       const bc = new BroadcastChannel('nryn_oauth');
       bc.onmessage = (event) => {
-        if (event.data?.type === 'GMAIL_CONNECTED') {
+        if (event.data?.type === 'GMAIL_CONNECTED' || event.data?.type === 'GMAIL_DISCONNECTED') {
           refreshAll();
         }
       };

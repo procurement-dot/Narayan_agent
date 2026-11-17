@@ -100,7 +100,7 @@ You MUST respond ONLY with a raw JSON object matching this schema without any ma
             headers: {
               Authorization: `Bearer ${apiKey}`,
               'Content-Type': 'application/json',
-              'HTTP-Referer': 'http://localhost:4000',
+              'HTTP-Referer': process.env.RENDER_EXTERNAL_URL || 'https://narayan-agent.onrender.com',
               'X-Title': 'NRYN Assistant',
             },
             body: JSON.stringify({

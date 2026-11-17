@@ -371,10 +371,14 @@ function saveHealthDatabase(data: HealthDatabaseState) {
 let db = loadHealthDatabase();
 
 const isSupabaseConfigured = () =>
-  env.SUPABASE_URL &&
-  !env.SUPABASE_URL.includes('placeholder') &&
-  env.SUPABASE_SERVICE_ROLE_KEY &&
-  !env.SUPABASE_SERVICE_ROLE_KEY.includes('placeholder');
+  Boolean(
+    env.SUPABASE_URL &&
+    !env.SUPABASE_URL.includes('placeholder') &&
+    env.SUPABASE_SERVICE_ROLE_KEY &&
+    !env.SUPABASE_SERVICE_ROLE_KEY.includes('placeholder') &&
+    !env.SUPABASE_SERVICE_ROLE_KEY.includes('sample_') &&
+    env.SUPABASE_SERVICE_ROLE_KEY.length > 50
+  );
 
 export const healthRepository = {
   // Profiles

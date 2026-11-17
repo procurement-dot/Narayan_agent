@@ -1,7 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { supabase } from '../../config/supabase.js';
-import { env } from '../../config/env.js';
+import { db } from '../../db/db.js';
 import { CreateNoteInput, UpdateNoteInput } from './notes.dto.js';
 
 export interface NoteRecord {
@@ -64,34 +63,24 @@ function savePersistentNotes(notes: NoteRecord[]) {
 
 let fileNotes: NoteRecord[] = loadPersistentNotes();
 
-const isSupabaseConfigured = () =>
-  env.SUPABASE_URL &&
-  !env.SUPABASE_URL.includes('placeholder') &&
-  env.SUPABASE_SERVICE_ROLE_KEY &&
-  !env.SUPABASE_SERVICE_ROLE_KEY.includes('placeholder');
-
 export const notesRepository = {
   async getNotes(filters?: { area?: string; search?: string }) {
-    if (isSupabaseConfigured()) {
-      try {
-        let query = supabase
-          .from('notes')
-          .select('*')
-          .order('is_pinned', { ascending: false })
-          .order('created_at', { ascending: false });
-
-        if (filters?.area && filters.area !== 'all') {
-          query = query.eq('area', filters.area);
-        }
-        if (filters?.search) {
-          query = query.ilike('title', `%${filters.search}%`);
-        }
-
-        const { data, error } = await query;
-        if (!error && data) return data as NoteRecord[];
-      } catch (err) {
-        console.warn('Supabase notes query failed, using persistent file fallback:', err);
+    try {
+      let sql = 'SELECT * FROM notes WHERE 1=1';
+      const params: any[] = [];
+      if (filters?.area && filters.area !== 'all') {
+        params.push(filters.area);
+        sql += ` AND area = $${params.length}`;
       }
+      if (filters?.search) {
+        params.push(`%${filters.search}%`);
+        sql += ` AND (title ILIKE $${params.length} OR body ILIKE $${params.length})`;
+      }
+      sql += ' ORDER BY is_pinned DESC, created_at DESC';
+      const rows = await db.query(sql, params);
+      if (rows && rows.length > 0) return rows as NoteRecord[];
+    } catch (err) {
+      console.warn('DB notes query failed, using persistent file fallback:', err);
     }
 
     fileNotes = loadPersistentNotes();
@@ -113,42 +102,53 @@ export const notesRepository = {
   },
 
   async getNoteById(id: string) {
-    if (isSupabaseConfigured()) {
-      try {
-        const { data, error } = await supabase.from('notes').select('*').eq('id', id).single();
-        if (!error && data) return data as NoteRecord;
-      } catch (err) {
-        console.warn('Supabase getNoteById failed, using persistent file store:', err);
-      }
+    try {
+      const row = await db.queryOne('SELECT * FROM notes WHERE id = $1', [id]);
+      if (row) return row as NoteRecord;
+    } catch (err) {
+      console.warn('DB getNoteById failed, using persistent file store:', err);
     }
 
     fileNotes = loadPersistentNotes();
     return fileNotes.find((n) => n.id === id) || null;
   },
 
-  async createNote(input: CreateNoteInput, userId = '00000000-0000-0000-0000-000000000000') {
+  async createNote(input: CreateNoteInput, userId = '00000000-0000-0000-0000-000000000001') {
     const newNote: NoteRecord = {
       id: `n-${Date.now()}`,
       user_id: userId,
       title: input.title,
-      body: input.body,
+      body: input.body || '',
       area: input.area,
-      source: input.source,
-      source_type: input.source_type,
+      source: input.source || 'Quick capture',
+      source_type: input.source_type || 'text',
       transcript: input.transcript,
       mom_data: input.mom_data,
-      is_pinned: input.is_pinned,
+      is_pinned: Boolean(input.is_pinned),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
-    if (isSupabaseConfigured()) {
-      try {
-        const { data, error } = await supabase.from('notes').insert(newNote).select().single();
-        if (!error && data) return data as NoteRecord;
-      } catch (err) {
-        console.warn('Supabase createNote failed, writing to persistent file:', err);
-      }
+    try {
+      const row = await db.queryOne(
+        `INSERT INTO notes (user_id, title, body, area, source, source_type, transcript, mom_data, is_pinned)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         RETURNING *`,
+        [
+          userId,
+          input.title,
+          input.body || '',
+          input.area,
+          input.source || 'Quick capture',
+          input.source_type || 'text',
+          input.transcript || null,
+          input.mom_data ? JSON.stringify(input.mom_data) : null,
+          Boolean(input.is_pinned),
+        ]
+      );
+      if (row) return row as NoteRecord;
+    } catch (err) {
+      console.warn('DB createNote failed, writing to persistent file:', err);
     }
 
     fileNotes = loadPersistentNotes();
@@ -158,18 +158,32 @@ export const notesRepository = {
   },
 
   async updateNote(id: string, input: UpdateNoteInput) {
-    if (isSupabaseConfigured()) {
-      try {
-        const { data, error } = await supabase
-          .from('notes')
-          .update({ ...input, updated_at: new Date().toISOString() })
-          .eq('id', id)
-          .select()
-          .single();
-        if (!error && data) return data as NoteRecord;
-      } catch (err) {
-        console.warn('Supabase updateNote failed, updating persistent file:', err);
+    try {
+      const sets: string[] = ['updated_at = NOW()'];
+      const params: any[] = [id];
+      if (input.title !== undefined) {
+        params.push(input.title);
+        sets.push(`title = $${params.length}`);
       }
+      if (input.body !== undefined) {
+        params.push(input.body);
+        sets.push(`body = $${params.length}`);
+      }
+      if (input.area !== undefined) {
+        params.push(input.area);
+        sets.push(`area = $${params.length}`);
+      }
+      if (input.is_pinned !== undefined) {
+        params.push(input.is_pinned);
+        sets.push(`is_pinned = $${params.length}`);
+      }
+      const row = await db.queryOne(
+        `UPDATE notes SET ${sets.join(', ')} WHERE id = $1 RETURNING *`,
+        params
+      );
+      if (row) return row as NoteRecord;
+    } catch (err) {
+      console.warn('DB updateNote failed, updating persistent file:', err);
     }
 
     fileNotes = loadPersistentNotes();
@@ -187,12 +201,10 @@ export const notesRepository = {
   },
 
   async deleteNote(id: string) {
-    if (isSupabaseConfigured()) {
-      try {
-        await supabase.from('notes').delete().eq('id', id);
-      } catch (err) {
-        console.warn('Supabase deleteNote failed, deleting from persistent file:', err);
-      }
+    try {
+      await db.query('DELETE FROM notes WHERE id = $1', [id]);
+    } catch (err) {
+      console.warn('DB deleteNote failed, deleting from persistent file:', err);
     }
 
     fileNotes = loadPersistentNotes();

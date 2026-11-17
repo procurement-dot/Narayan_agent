@@ -11,8 +11,14 @@ import { useEmailUiStore } from '../store/emailUi.store';
 import { useToast } from '../../../shared/components/Toast';
 
 export const EmailConnectionBar: React.FC = () => {
-  const { isConnected, connectedEmail, isSyncing, connectGmail, syncEmails } =
-    useEmailUiStore();
+  const {
+    isConnected,
+    connectedEmail,
+    isSyncing,
+    connectGmail,
+    syncEmails,
+    disconnectGmail,
+  } = useEmailUiStore();
   const { showToast } = useToast();
 
   const handleConnect = async () => {
@@ -20,6 +26,15 @@ export const EmailConnectionBar: React.FC = () => {
       await connectGmail();
     } catch (err: any) {
       showToast('Could not open Google login', 'warning');
+    }
+  };
+
+  const handleDisconnect = async () => {
+    try {
+      await disconnectGmail();
+      showToast('Gmail disconnected successfully', 'info');
+    } catch (err: any) {
+      showToast('Could not disconnect Gmail', 'warning');
     }
   };
 
@@ -86,26 +101,55 @@ export const EmailConnectionBar: React.FC = () => {
         </View>
       </View>
 
-      <TouchableOpacity
-        style={[styles.syncButton, isSyncing && styles.syncButtonDisabled]}
-        onPress={handleSync}
-        disabled={isSyncing}
-        activeOpacity={0.7}
-      >
-        {isSyncing ? (
-          <View style={styles.syncingRow}>
-            <ActivityIndicator size="small" color="#2c3a2f" />
-            <Text style={styles.syncButtonText}> Analyzing...</Text>
-          </View>
-        ) : (
-          <Text style={styles.syncButtonText}>Sync Now ↻</Text>
-        )}
-      </TouchableOpacity>
+      <View style={styles.rightActionsRow}>
+        <TouchableOpacity
+          style={styles.disconnectButton}
+          onPress={handleDisconnect}
+          disabled={isSyncing}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.disconnectButtonText}>Disconnect</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.syncButton, isSyncing && styles.syncButtonDisabled]}
+          onPress={handleSync}
+          disabled={isSyncing}
+          activeOpacity={0.7}
+        >
+          {isSyncing ? (
+            <View style={styles.syncingRow}>
+              <ActivityIndicator size="small" color="#2c3a2f" />
+              <Text style={styles.syncButtonText}> Analyzing...</Text>
+            </View>
+          ) : (
+            <Text style={styles.syncButtonText}>Sync Now ↻</Text>
+          )}
+        </TouchableOpacity>
+      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
+  rightActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  disconnectButton: {
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: '#e2cfcf',
+    backgroundColor: '#fbf4f4',
+  },
+  disconnectButtonText: {
+    fontSize: 11,
+    color: '#8c3f3f',
+    fontFamily: typography.fontFamily.uiMedium,
+  },
   disconnectedContainer: {
     backgroundColor: '#f7f6f1',
     borderRadius: radii.md,
