@@ -205,6 +205,9 @@ export const useEmailUiStore = create<EmailUiState>((set, get) => ({
   },
 
   syncEmails: async (options?: { silent?: boolean }) => {
+    if (!get().isConnected) {
+      return null;
+    }
     try {
       if (!options?.silent) {
         set({ isSyncing: true });

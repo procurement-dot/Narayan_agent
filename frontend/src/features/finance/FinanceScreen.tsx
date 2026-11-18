@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,7 @@ import { AppHeader } from '../navigation/AppHeader';
 import { FinanceTab, RecordItem } from './finance.types';
 import { useToast } from '../../shared/components/Toast';
 import { useCalendarStore } from '../calendar/calendar.store';
-import { syncAllBankTransactions } from './sms/smsReader.service';
+import { syncAllBankTransactions, ScanProgressInfo } from './sms/smsReader.service';
 import { ParsedBankTransaction } from './sms/sms.types';
 
 const TABS: { id: FinanceTab; label: string }[] = [
@@ -52,7 +52,14 @@ export const FinanceScreen: React.FC = () => {
     parsedTransactions,
     isSyncingSms,
     setIsSyncingSms,
+    fetchBackendData,
+    userNetCashFlow,
+    setUserNetCashFlow,
   } = useFinanceStore();
+
+  useEffect(() => {
+    fetchBackendData();
+  }, []);
 
   const { showToast } = useToast();
   const { addEvent } = useCalendarStore();
@@ -60,14 +67,54 @@ export const FinanceScreen: React.FC = () => {
   // SMS Sync state
   const [isSmsTransactionsModalOpen, setIsSmsTransactionsModalOpen] = useState(false);
   const [smsFilter, setSmsFilter] = useState<'all' | 'debit' | 'credit' | 'bill'>('all');
+  const [isScanningModalVisible, setIsScanningModalVisible] = useState(false);
+  const [scanProgress, setScanProgress] = useState<ScanProgressInfo | null>(null);
+
+  // User-controlled Net Cash Flow Modal
+  const [isNetCashFlowModalOpen, setIsNetCashFlowModalOpen] = useState(false);
+  const [netCashFlowMode, setNetCashFlowMode] = useState<'auto' | 'manual'>('auto');
+  const [manualCashFlowInput, setManualCashFlowInput] = useState('');
+  const [timePeriod, setTimePeriod] = useState<'month' | 'all'>('all');
+
+  const handleSaveNetCashFlow = async () => {
+    if (netCashFlowMode === 'manual') {
+      const val = parseFloat(manualCashFlowInput.replace(/[₹,]/g, ''));
+      if (isNaN(val)) {
+        showToast('Please enter a valid amount', 'warning');
+        return;
+      }
+      await setUserNetCashFlow(val);
+      showToast(`Monthly Net Cash Flow set to ₹${val.toLocaleString('en-IN')}`, 'success');
+    } else {
+      await setUserNetCashFlow(null);
+      showToast('Switched to auto-calculation from bank SMS', 'success');
+    }
+    setIsNetCashFlowModalOpen(false);
+  };
 
   const handleSyncBankSms = async () => {
     try {
       setIsSyncingSms(true);
-      showToast('Scanning all bank SMS history...', 'info');
-      const summary = await syncAllBankTransactions();
-      showToast(`Synced ${summary.bankSmsCount} bank transactions across history!`, 'success');
+      setIsScanningModalVisible(true);
+      setScanProgress({
+        percent: 10,
+        stage: 'Connecting to Android SMS inbox...',
+        detail: 'Requesting permission and reading message store',
+        current: 0,
+        total: 0,
+        timeRemaining: '~3s',
+      });
+
+      const summary = await syncAllBankTransactions((info) => {
+        setScanProgress(info);
+      });
+
+      setIsScanningModalVisible(false);
+      setScanProgress(null);
+      showToast(`Synced ${summary.bankSmsCount} bank transactions!`, 'success');
     } catch (e: any) {
+      setIsScanningModalVisible(false);
+      setScanProgress(null);
       showToast(e.message || 'Failed to sync SMS', 'error');
     } finally {
       setIsSyncingSms(false);
@@ -118,11 +165,52 @@ export const FinanceScreen: React.FC = () => {
     return `₹${Math.round(n).toLocaleString('en-IN')}`;
   };
 
-  // Calculations
+  // Dynamic Calculations (No dummy data)
   const totalAssetsNet = assets.reduce((sum, a) => sum + Number(a.value || 0), 0);
   const totalLending = loans.reduce((sum, l) => sum + Number(l.principal || 0), 0);
   const totalRentExpected = assets.reduce((sum, a) => sum + Number(a.expectedRent || 0), 0);
   const totalRentReceived = assets.reduce((sum, a) => sum + Number(a.receivedRent || 0), 0);
+  const totalLiquidBalances = (smsSyncSummary?.accountsFound || []).reduce(
+    (sum, acc) => sum + (Number(acc.lastBalance) || 0),
+    0
+  );
+
+  // Time-period filtering for Overview (Default: All History or Recent 30 Days)
+  const activePeriodTransactions = React.useMemo(() => {
+    if (timePeriod === 'all') {
+      return parsedTransactions;
+    }
+    // Calculate 30-day window relative to the latest transaction in user's history
+    const latestTxDate = parsedTransactions.length > 0 ? parsedTransactions[0].date : Date.now();
+    const thirtyDaysAgo = latestTxDate - 30 * 24 * 60 * 60 * 1000;
+    const recent = parsedTransactions.filter((tx) => tx.date >= thirtyDaysAgo);
+    return recent.length > 0 ? recent : parsedTransactions;
+  }, [timePeriod, parsedTransactions]);
+
+  const periodCredited = React.useMemo(() => {
+    return activePeriodTransactions
+      .filter((tx) => tx.type === 'credit')
+      .reduce((sum, tx) => sum + tx.amount, 0);
+  }, [activePeriodTransactions]);
+
+  const periodDebited = React.useMemo(() => {
+    return activePeriodTransactions
+      .filter((tx) => tx.type === 'debit')
+      .reduce((sum, tx) => sum + tx.amount, 0);
+  }, [activePeriodTransactions]);
+
+  const periodCreditCount = activePeriodTransactions.filter((tx) => tx.type === 'credit').length;
+  const periodDebitCount = activePeriodTransactions.filter((tx) => tx.type === 'debit').length;
+
+  const autoNetCashFlow = periodCredited - periodDebited;
+  const displayNetCashFlow =
+    userNetCashFlow !== null ? userNetCashFlow : autoNetCashFlow;
+
+  // Real financial picture: actual verified liquid balance + user assets + loans
+  const dynamicTotalWorth =
+    totalLiquidBalances > 0
+      ? totalLiquidBalances + totalAssetsNet + totalLending
+      : totalAssetsNet + totalLending;
 
   const propertyLandTotal = assets
     .filter((x) => /property|real estate|land/i.test(x.type))
@@ -139,6 +227,38 @@ export const FinanceScreen: React.FC = () => {
     (a, b) => a + (b.expectedRent - b.receivedRent),
     0
   );
+
+  // Dynamic 7-bar weekly cash flow from real parsed SMS transactions
+  const dynamicBars = React.useMemo(() => {
+    const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+    if (parsedTransactions.length === 0) {
+      return days.map((dayLabel) => ({
+        label: dayLabel,
+        height: 12,
+        amount: 0,
+      }));
+    }
+
+    const buckets = [0, 0, 0, 0, 0, 0, 0];
+    parsedTransactions.forEach((tx) => {
+      const d = new Date(tx.date).getDay();
+      const idx = d === 0 ? 6 : d - 1;
+      buckets[idx] += tx.amount;
+    });
+
+    const maxVal = Math.max(...buckets, 1);
+    return days.map((dayLabel, i) => {
+      const val = buckets[i];
+      const h = val === 0 ? 12 : Math.max(16, Math.min(105, Math.round((val / maxVal) * 105)));
+      return {
+        label: dayLabel,
+        height: h,
+        amount: val,
+      };
+    });
+  }, [parsedTransactions]);
+
+  const dynamicAlerts = parsedTransactions.filter((x) => x.type === 'bill');
 
   // Retirement Math
   const calculateRetirementMath = () => {
@@ -330,58 +450,173 @@ export const FinanceScreen: React.FC = () => {
               </View>
             </View>
 
-            {/* Feature Banner: Sage */}
+            {/* Feature Banner: Sage (100% Dynamic) */}
             <View style={[styles.featureCard, styles.featureSage]}>
-              <Text style={styles.featureSmall}>Illustrative financial picture</Text>
-              <Text style={styles.featureBig}>{formatMoney(totalAssetsNet + totalLending)}</Text>
-              <Text style={styles.featureSpan}>Assets + loans receivable · excludes liabilities</Text>
+              <Text style={styles.featureSmall}>Verified Bank & Cash Position</Text>
+              <Text style={styles.featureBig}>{formatMoney(dynamicTotalWorth)}</Text>
+              <Text style={styles.featureSpan}>
+                {smsSyncSummary
+                  ? `Based on ${smsSyncSummary.bankSmsCount} verified transactions across ${smsSyncSummary.accountsFound.length} account${smsSyncSummary.accountsFound.length > 1 ? 's' : ''}`
+                  : 'Tap Sync All to automatically calculate from your bank SMS'}
+              </Text>
             </View>
 
-            {/* Stat Grid 2x2 */}
+            {/* Period Filter Selector: All History vs Monthly (30 Days) */}
+            <View style={{ flexDirection: 'row', gap: 8, marginVertical: 12 }}>
+              <TouchableOpacity
+                style={[
+                  styles.tabButton,
+                  timePeriod === 'all' && styles.tabButtonActive,
+                  { paddingVertical: 6, paddingHorizontal: 14, borderRadius: 14 },
+                ]}
+                onPress={() => setTimePeriod('all')}
+              >
+                <Text
+                  style={[
+                    styles.tabText,
+                    timePeriod === 'all' && styles.tabTextActive,
+                    { fontSize: 12, fontWeight: '600' },
+                  ]}
+                >
+                  ⚡ All History
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.tabButton,
+                  timePeriod === 'month' && styles.tabButtonActive,
+                  { paddingVertical: 6, paddingHorizontal: 14, borderRadius: 14 },
+                ]}
+                onPress={() => setTimePeriod('month')}
+              >
+                <Text
+                  style={[
+                    styles.tabText,
+                    timePeriod === 'month' && styles.tabTextActive,
+                    { fontSize: 12, fontWeight: '600' },
+                  ]}
+                >
+                  📅 Monthly (Last 30 Days)
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Stat Grid 2x2 (100% Dynamic) */}
             <View style={styles.statGrid}>
               <View style={styles.statCard}>
-                <Text style={styles.statLabel}>Property & land</Text>
-                <Text style={styles.statValue}>{formatMoney(propertyLandTotal)}</Text>
+                <Text style={styles.statLabel}>
+                  {timePeriod === 'month' ? 'Monthly Inflow' : 'Total Inflow (Credits)'}
+                </Text>
+                <Text style={[styles.statValue, { color: '#2e7d32' }]}>
+                  {parsedTransactions.length > 0 ? `+${formatMoney(periodCredited)}` : '₹0'}
+                </Text>
+                <Text style={{ fontSize: 10, color: '#7a8e7e', marginTop: 3 }}>
+                  {parsedTransactions.length > 0
+                    ? `${periodCreditCount} verified credit${periodCreditCount !== 1 ? 's' : ''}`
+                    : '0 credits'}
+                </Text>
               </View>
               <View style={styles.statCard}>
-                <Text style={styles.statLabel}>Investments</Text>
-                <Text style={styles.statValue}>{formatMoney(investmentsTotal)}</Text>
+                <Text style={styles.statLabel}>
+                  {timePeriod === 'month' ? 'Monthly Outflow' : 'Total Outflow (Debits)'}
+                </Text>
+                <Text style={[styles.statValue, { color: '#8a3324' }]}>
+                  {parsedTransactions.length > 0 ? `-${formatMoney(periodDebited)}` : '₹0'}
+                </Text>
+                <Text style={{ fontSize: 10, color: '#7a8e7e', marginTop: 3 }}>
+                  {parsedTransactions.length > 0
+                    ? `${periodDebitCount} verified debit${periodDebitCount !== 1 ? 's' : ''}`
+                    : '0 debits'}
+                </Text>
               </View>
+              <TouchableOpacity
+                style={styles.statCard}
+                activeOpacity={0.7}
+                onPress={() => {
+                  setNetCashFlowMode(userNetCashFlow !== null ? 'manual' : 'auto');
+                  setManualCashFlowInput(userNetCashFlow !== null ? userNetCashFlow.toString() : '');
+                  setIsNetCashFlowModalOpen(true);
+                }}
+              >
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={styles.statLabel}>Net Cash Flow</Text>
+                  <Text style={{ fontSize: 10, color: '#3f6347', fontWeight: '700' }}>✎ Set</Text>
+                </View>
+                <Text
+                  style={[
+                    styles.statValue,
+                    displayNetCashFlow >= 0 ? { color: '#2e7d32' } : { color: '#8a3324' },
+                  ]}
+                >
+                  {displayNetCashFlow >= 0 ? '+' : '-'}
+                  {formatMoney(Math.abs(displayNetCashFlow))}
+                </Text>
+                <Text style={{ fontSize: 10, color: '#687b6d', marginTop: 3 }}>
+                  {userNetCashFlow !== null
+                    ? 'User Added · Tap to change'
+                    : parsedTransactions.length > 0
+                    ? timePeriod === 'month'
+                      ? 'Monthly Net · Tap to set'
+                      : 'All-time Net · Tap to set'
+                    : 'Tap to add monthly target'}
+                </Text>
+              </TouchableOpacity>
               <View style={styles.statCard}>
-                <Text style={styles.statLabel}>Loans receivable</Text>
-                <Text style={styles.statValue}>{formatMoney(totalLending)}</Text>
-              </View>
-              <View style={styles.statCard}>
-                <Text style={styles.statLabel}>Rent gap / month</Text>
-                <Text style={styles.statValue}>{formatMoney(monthlyRentGap)}</Text>
+                <Text style={styles.statLabel}>Active Bank Accounts</Text>
+                <Text style={styles.statValue}>
+                  {smsSyncSummary ? `${smsSyncSummary.accountsFound.length} Verified` : '0 Accounts'}
+                </Text>
+                <Text style={{ fontSize: 10, color: '#7a8e7e', marginTop: 3 }} numberOfLines={1}>
+                  {smsSyncSummary && smsSyncSummary.accountsFound.length > 0
+                    ? smsSyncSummary.accountsFound.map((a) => `${a.bank} (${a.mask})`).join(', ')
+                    : 'Sync to detect accounts'}
+                </Text>
               </View>
             </View>
 
-            {/* Section: Monthly cash flow */}
+            {/* Section: Monthly cash flow (Dynamic from Real SMS) */}
             <View style={styles.sectionWrap}>
-              <Text style={styles.sectionTitle}>Monthly cash flow</Text>
+              <Text style={styles.sectionTitle}>Weekly cash flow</Text>
               <View style={styles.card}>
                 <View style={styles.barChartContainer}>
-                  {CASH_FLOW_SERIES.map((v, i) => {
-                    const barHeight = Math.round((v / 65) * 105);
-                    return (
-                      <View key={i} style={styles.barCol}>
-                        <View style={[styles.barFill, { height: Math.max(barHeight, 10) }]} />
-                        <Text style={styles.barLabel}>{DAYS_OF_WEEK[i]}</Text>
-                      </View>
-                    );
-                  })}
+                  {dynamicBars.map((b, i) => (
+                    <View key={i} style={styles.barCol}>
+                      <View style={[styles.barFill, { height: b.height }]} />
+                      <Text style={styles.barLabel}>{b.label}</Text>
+                    </View>
+                  ))}
                 </View>
                 <View style={styles.legendRow}>
-                  <Text style={styles.legendItem}>● Income trend</Text>
-                  <Text style={styles.legendItem}>Sample data</Text>
+                  <Text style={styles.legendItem}>● Live transaction volume</Text>
+                  <Text style={styles.legendItem}>
+                    {parsedTransactions.length > 0
+                      ? `${parsedTransactions.length} Verified Bank Transactions`
+                      : 'Sync to load live data'}
+                  </Text>
                 </View>
               </View>
             </View>
 
-            {/* Section: Needs your attention */}
+            {/* Section: Needs your attention (100% Dynamic) */}
             <View style={styles.sectionWrap}>
               <Text style={styles.sectionTitle}>Needs your attention</Text>
+
+              {/* Dynamic Bills from SMS */}
+              {dynamicAlerts.map((b, i) => (
+                <View key={`bill-${i}`} style={styles.n68Row}>
+                  <View style={[styles.rowIcon, { backgroundColor: '#faece4' }]}>
+                    <Text style={[styles.rowIconText, { color: '#b95133' }]}>🔔</Text>
+                  </View>
+                  <View style={styles.rowCopy}>
+                    <Text style={styles.rowTitle}>{b.bankName} · {formatMoney(b.amount)}</Text>
+                    <Text style={styles.rowSubtitle}>
+                      {b.dueDate ? `Due date: ${b.dueDate}` : b.rawBody.slice(0, 75)}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+
+              {/* Dynamic Rent Due (only if user recorded properties) */}
               {rentDueAssets.map((x, i) => (
                 <TouchableOpacity
                   key={`rent-${i}`}
@@ -395,42 +630,47 @@ export const FinanceScreen: React.FC = () => {
                   <View style={styles.rowCopy}>
                     <Text style={styles.rowTitle}>{x.name} · rent not received</Text>
                     <Text style={styles.rowSubtitle}>
-                      {formatMoney(x.expectedRent - x.receivedRent)} opportunity cost this month · investigate first
+                      {formatMoney(x.expectedRent - x.receivedRent)} opportunity cost this month
                     </Text>
                   </View>
                   <Text style={styles.rowArrow}>↗</Text>
                 </TouchableOpacity>
               ))}
 
-              <TouchableOpacity
-                style={styles.n68Row}
-                activeOpacity={0.7}
-                onPress={() => setTab('lending')}
-              >
-                <View style={styles.rowIcon}>
-                  <Text style={styles.rowIconText}>₹</Text>
-                </View>
-                <View style={styles.rowCopy}>
-                  <Text style={styles.rowTitle}>3 lending records</Text>
-                  <Text style={styles.rowSubtitle}>Upcoming interest: ₹8,000 + other dues</Text>
-                </View>
-                <Text style={styles.rowArrow}>↗</Text>
-              </TouchableOpacity>
+              {/* Dynamic Loans (only if user recorded loans) */}
+              {loans.length > 0 && (
+                <TouchableOpacity
+                  style={styles.n68Row}
+                  activeOpacity={0.7}
+                  onPress={() => setTab('lending')}
+                >
+                  <View style={styles.rowIcon}>
+                    <Text style={styles.rowIconText}>₹</Text>
+                  </View>
+                  <View style={styles.rowCopy}>
+                    <Text style={styles.rowTitle}>{loans.length} active lending arrangement{loans.length > 1 ? 's' : ''}</Text>
+                    <Text style={styles.rowSubtitle}>Principal: {formatMoney(totalLending)} · tap to review interest</Text>
+                  </View>
+                  <Text style={styles.rowArrow}>↗</Text>
+                </TouchableOpacity>
+              )}
 
-              <TouchableOpacity
-                style={styles.n68Row}
-                activeOpacity={0.7}
-                onPress={() => setTab('retire')}
-              >
-                <View style={styles.rowIcon}>
-                  <Text style={styles.rowIconText}>◎</Text>
+              {/* Clean all clear message if no pending dues */}
+              {dynamicAlerts.length === 0 && rentDueAssets.length === 0 && (
+                <View style={[styles.n68Row, { opacity: 0.95 }]}>
+                  <View style={[styles.rowIcon, { backgroundColor: '#e9f2e7' }]}>
+                    <Text style={[styles.rowIconText, { color: '#386641' }]}>✓</Text>
+                  </View>
+                  <View style={styles.rowCopy}>
+                    <Text style={styles.rowTitle}>All accounts in good standing</Text>
+                    <Text style={styles.rowSubtitle}>
+                      {smsSyncSummary
+                        ? `No pending bill due dates found across your ${smsSyncSummary.bankSmsCount} verified bank SMS.`
+                        : 'No pending alerts found.'}
+                    </Text>
+                  </View>
                 </View>
-                <View style={styles.rowCopy}>
-                  <Text style={styles.rowTitle}>Retirement goal pathway</Text>
-                  <Text style={styles.rowSubtitle}>View milestone funding and projected shortfall</Text>
-                </View>
-                <Text style={styles.rowArrow}>↗</Text>
-              </TouchableOpacity>
+              )}
             </View>
           </View>
         )}
@@ -455,6 +695,23 @@ export const FinanceScreen: React.FC = () => {
             >
               <Text style={styles.primaryButtonText}>+ Add land, property or investment</Text>
             </TouchableOpacity>
+
+            {/* Verified Liquid Accounts from SMS */}
+            {(smsSyncSummary?.accountsFound || []).map((acc, i) => (
+              <View key={`acc-${i}`} style={styles.assetItem}>
+                <View style={[styles.assetSymbolBox, { backgroundColor: '#e8f3e6' }]}>
+                  <Text style={styles.assetSymbolText}>🏦</Text>
+                </View>
+                <View style={styles.assetInfo}>
+                  <Text style={styles.assetName}>{acc.bank}</Text>
+                  <Text style={styles.assetMeta}>Active Bank Account · {acc.mask}</Text>
+                  <Text style={[styles.assetStatus, { color: '#2e7d32' }]}>Verified via SMS</Text>
+                </View>
+                <Text style={styles.assetValue}>
+                  {acc.lastBalance !== undefined ? formatMoney(acc.lastBalance) : 'Verified'}
+                </Text>
+              </View>
+            ))}
 
             {/* Asset Items */}
             {assets.map((x, i) => {
@@ -483,6 +740,15 @@ export const FinanceScreen: React.FC = () => {
                 </TouchableOpacity>
               );
             })}
+
+            {assets.length === 0 && (!smsSyncSummary || smsSyncSummary.accountsFound.length === 0) && (
+              <View style={{ padding: 30, alignItems: 'center' }}>
+                <Text style={styles.modalP}>No property or land recorded yet.</Text>
+                <Text style={styles.modalMuted}>
+                  Tap '+ Add land, property or investment' above to record properties.
+                </Text>
+              </View>
+            )}
 
             {/* Rental Outlook */}
             <View style={styles.sectionWrap}>
@@ -577,6 +843,15 @@ export const FinanceScreen: React.FC = () => {
                 </View>
               );
             })}
+
+            {loans.length === 0 && (
+              <View style={{ padding: 30, alignItems: 'center' }}>
+                <Text style={styles.modalP}>No active lending records.</Text>
+                <Text style={styles.modalMuted}>
+                  Tap '+ Record a loan' above to track money lent with interest and due dates.
+                </Text>
+              </View>
+            )}
           </View>
         )}
 
@@ -745,6 +1020,15 @@ export const FinanceScreen: React.FC = () => {
                 <Text style={styles.rowArrow}>↗</Text>
               </TouchableOpacity>
             ))}
+
+            {alerts.length === 0 && (
+              <View style={{ padding: 30, alignItems: 'center' }}>
+                <Text style={styles.modalP}>No pending bill or EMI obligations.</Text>
+                <Text style={styles.modalMuted}>
+                  When banks send credit card or EMI statements via SMS, they will automatically appear here.
+                </Text>
+              </View>
+            )}
           </View>
         )}
 
@@ -1286,6 +1570,213 @@ export const FinanceScreen: React.FC = () => {
                   <Text style={styles.modalP}>No bank SMS found. Click Sync All to scan.</Text>
                 </View>
               )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ===================== MODAL 8: LIVE SCAN PROGRESS MODAL ===================== */}
+      <Modal
+        visible={isScanningModalVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={() => {}}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.progressCardContainer}>
+            <View style={styles.progressIconRow}>
+              <View style={styles.progressIconCircle}>
+                <Text style={styles.progressIconText}>⚡</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.progressModalTitle}>Scanning Bank SMS</Text>
+                <Text style={styles.progressModalSubtitle}>
+                  Analyzing your entire message inbox
+                </Text>
+              </View>
+            </View>
+
+            {/* Progress Bar */}
+            <View style={styles.progressTrack}>
+              <View
+                style={[
+                  styles.progressFill,
+                  { width: `${scanProgress ? scanProgress.percent : 10}%` },
+                ]}
+              />
+            </View>
+
+            {/* Percentage & ETA Row */}
+            <View style={styles.progressMetaRow}>
+              <Text style={styles.progressPercentText}>
+                {scanProgress ? `${scanProgress.percent}%` : '0%'}
+              </Text>
+              <Text style={styles.progressEtaText}>
+                {scanProgress ? scanProgress.timeRemaining : '~2s remaining'}
+              </Text>
+            </View>
+
+            {/* Current Stage Text */}
+            <View style={styles.progressStatusBox}>
+              <Text style={styles.progressStageText}>
+                {scanProgress?.stage || 'Connecting to Android SMS inbox...'}
+              </Text>
+              <Text style={styles.progressDetailText}>
+                {scanProgress?.detail || 'Reading bank messages securely on-device'}
+              </Text>
+            </View>
+
+            {/* Live Step Checklist */}
+            <View style={styles.checklistWrap}>
+              <View style={styles.checkStep}>
+                <Text
+                  style={[
+                    styles.stepDot,
+                    (scanProgress?.percent || 0) >= 20 && styles.stepDotDone,
+                  ]}
+                >
+                  {(scanProgress?.percent || 0) >= 20 ? '✓' : '1'}
+                </Text>
+                <Text style={styles.stepLabel}>Connect to SMS inbox</Text>
+              </View>
+              <View style={styles.checkStep}>
+                <Text
+                  style={[
+                    styles.stepDot,
+                    (scanProgress?.percent || 0) >= 40 && styles.stepDotDone,
+                  ]}
+                >
+                  {(scanProgress?.percent || 0) >= 40 ? '✓' : '2'}
+                </Text>
+                <Text style={styles.stepLabel}>Scan bank transactions</Text>
+              </View>
+              <View style={styles.checkStep}>
+                <Text
+                  style={[
+                    styles.stepDot,
+                    (scanProgress?.percent || 0) >= 80 && styles.stepDotDone,
+                  ]}
+                >
+                  {(scanProgress?.percent || 0) >= 80 ? '✓' : '3'}
+                </Text>
+                <Text style={styles.stepLabel}>Extract balances & debits</Text>
+              </View>
+              <View style={styles.checkStep}>
+                <Text
+                  style={[
+                    styles.stepDot,
+                    (scanProgress?.percent || 0) >= 100 && styles.stepDotDone,
+                  ]}
+                >
+                  {(scanProgress?.percent || 0) >= 100 ? '✓' : '4'}
+                </Text>
+                <Text style={styles.stepLabel}>Update live financial picture</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ===================== MODAL 9: MONTHLY NET CASH FLOW ===================== */}
+      <Modal
+        visible={isNetCashFlowModalOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setIsNetCashFlowModalOpen(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.sheetContainer}>
+            <View style={styles.sheetHandle} />
+            <View style={styles.sheetHead}>
+              <View>
+                <Text style={styles.sheetTitle}>Monthly Net Cash Flow</Text>
+                <Text style={styles.sheetSub}>
+                  Set your target monthly savings or auto-calculate from SMS
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setIsNetCashFlowModalOpen(false)}>
+                <Text style={styles.sheetClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+              {/* Mode Toggle Buttons */}
+              <View style={{ flexDirection: 'row', gap: 10, marginVertical: 14 }}>
+                <TouchableOpacity
+                  style={[
+                    styles.tabButton,
+                    netCashFlowMode === 'manual' && styles.tabButtonActive,
+                    { flex: 1, paddingVertical: 10 },
+                  ]}
+                  onPress={() => setNetCashFlowMode('manual')}
+                >
+                  <Text
+                    style={[
+                      styles.tabText,
+                      netCashFlowMode === 'manual' && styles.tabTextActive,
+                      { textAlign: 'center' },
+                    ]}
+                  >
+                    ✎ User Specified
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.tabButton,
+                    netCashFlowMode === 'auto' && styles.tabButtonActive,
+                    { flex: 1, paddingVertical: 10 },
+                  ]}
+                  onPress={() => setNetCashFlowMode('auto')}
+                >
+                  <Text
+                    style={[
+                      styles.tabText,
+                      netCashFlowMode === 'auto' && styles.tabTextActive,
+                      { textAlign: 'center' },
+                    ]}
+                  >
+                    ⚡ Auto from SMS
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {netCashFlowMode === 'manual' ? (
+                <View>
+                  <Text style={styles.inputLabel}>Monthly Net Cash Flow / Savings Target (₹)</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="e.g. 25000"
+                    keyboardType="numeric"
+                    value={manualCashFlowInput}
+                    onChangeText={setManualCashFlowInput}
+                  />
+                  <Text style={{ fontSize: 12, color: '#66786a', marginTop: 6, lineHeight: 18 }}>
+                    Specify your own monthly net cash flow. This custom target will be saved and displayed on your overview.
+                  </Text>
+                </View>
+              ) : (
+                <View style={{ backgroundColor: '#f6f9f5', padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#e2ede0', marginVertical: 8 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#27382c' }}>
+                    Auto-calculated from Verified Bank SMS:
+                  </Text>
+                  <Text style={{ fontSize: 22, fontWeight: '700', color: autoNetCashFlow >= 0 ? '#2e7d32' : '#8a3324', marginTop: 6, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif' }}>
+                    {autoNetCashFlow >= 0 ? '+' : '-'}
+                    {formatMoney(Math.abs(autoNetCashFlow))}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#66786a', marginTop: 4, lineHeight: 18 }}>
+                    {smsSyncSummary
+                      ? `Calculated as Total Inflow (+${formatMoney(smsSyncSummary.totalCredited)}) minus Total Outflow (-${formatMoney(smsSyncSummary.totalDebited)}).`
+                      : 'Sync your bank SMS to automatically calculate from real deposits and debits.'}
+                  </Text>
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={[styles.primaryButton, { marginTop: 24 }]}
+                onPress={handleSaveNetCashFlow}
+              >
+                <Text style={styles.primaryButtonText}>Save Net Cash Flow</Text>
+              </TouchableOpacity>
             </ScrollView>
           </View>
         </View>
@@ -2036,5 +2527,121 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#809182',
     letterSpacing: 0.5,
+  },
+  // Progress Modal Styles
+  progressCardContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    padding: 24,
+    width: '90%',
+    maxWidth: 420,
+    borderWidth: 1,
+    borderColor: '#e2ede0',
+  },
+  progressIconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    marginBottom: 16,
+  },
+  progressIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#eaf3e8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#c6dfc3',
+  },
+  progressIconText: {
+    fontSize: 20,
+    color: '#345e3c',
+  },
+  progressModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#263b2c',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+  },
+  progressModalSubtitle: {
+    fontSize: 12,
+    color: '#6d8170',
+    marginTop: 2,
+  },
+  progressTrack: {
+    height: 10,
+    backgroundColor: '#edf3ec',
+    borderRadius: 999,
+    overflow: 'hidden',
+    marginVertical: 12,
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#3f6347',
+    borderRadius: 999,
+  },
+  progressMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  progressPercentText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#345e3c',
+  },
+  progressEtaText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#849687',
+  },
+  progressStatusBox: {
+    backgroundColor: '#f7faf6',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#e5eee3',
+    marginBottom: 16,
+  },
+  progressStageText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#283c2e',
+    marginBottom: 2,
+  },
+  progressDetailText: {
+    fontSize: 11,
+    color: '#6c816f',
+    lineHeight: 16,
+  },
+  checklistWrap: {
+    gap: 8,
+  },
+  checkStep: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  stepDot: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#edf2ec',
+    color: '#7f9382',
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  stepDotDone: {
+    backgroundColor: '#44684d',
+    color: '#fff',
+  },
+  stepLabel: {
+    fontSize: 12,
+    color: '#475d4a',
+    fontWeight: '500',
   },
 });

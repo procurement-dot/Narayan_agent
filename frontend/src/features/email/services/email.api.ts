@@ -1,4 +1,5 @@
 import { apiClient } from '../../../shared/api/client';
+import { getDeviceUserId } from '../../../shared/utils/deviceUser';
 import { EmailItem, ProposalItem } from '../types/email.types';
 
 export interface EmailSummaryResponse {
@@ -25,7 +26,10 @@ export interface SyncResponse {
 
 export const emailApi = {
   async getOAuthUrl(): Promise<string> {
-    const res = await apiClient.get<{ url: string }>('/email/oauth/auth-url');
+    const userId = await getDeviceUserId();
+    const res = await apiClient.get<{ url: string }>('/email/oauth/auth-url', {
+      params: { userId },
+    });
     return res.data.url;
   },
 

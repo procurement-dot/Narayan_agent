@@ -18,6 +18,7 @@ export interface ParsedBankTransaction {
   rawBody: string;
   dueDate?: string;
   category?: 'rent' | 'salary' | 'transfer' | 'food' | 'shopping' | 'utility' | 'investment' | 'general';
+  rawAccountDigits?: string;
 }
 
 export interface SmsSyncSummary {

@@ -3,7 +3,7 @@ import { emailService } from './email.service.js';
 
 export const emailController = {
   getOAuthUrl(req: Request, res: Response) {
-    const userId = (req as any).userId || '00000000-0000-0000-0000-000000000001';
+    const userId = (req.query.userId as string) || (req as any).userId || '00000000-0000-0000-0000-000000000001';
     const url = emailService.getOAuthUrl(userId);
     res.json({ url });
   },
@@ -155,8 +155,9 @@ export const emailController = {
   },
 
   async listEmails(req: Request, res: Response) {
+    const userId = (req as any).userId || '00000000-0000-0000-0000-000000000001';
     const tab = req.query.tab as string | undefined;
-    const emails = await emailService.listEmails(tab);
+    const emails = await emailService.listEmails(userId, tab);
     res.json(emails);
   },
 

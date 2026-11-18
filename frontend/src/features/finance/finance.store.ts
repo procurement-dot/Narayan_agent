@@ -15,6 +15,7 @@ import {
   FINANCE_RETIREMENT_DEFAULT,
 } from './finance.mock';
 import { ParsedBankTransaction, SmsSyncSummary } from './sms/sms.types';
+import { financeApi } from './finance.api';
 
 interface FinanceState {
   currentTab: FinanceTab;
@@ -29,20 +30,24 @@ interface FinanceState {
   smsSyncSummary: SmsSyncSummary | null;
   parsedTransactions: ParsedBankTransaction[];
   isSyncingSms: boolean;
+  isLoading: boolean;
+  userNetCashFlow: number | null;
 
   setTab: (tab: FinanceTab) => void;
-  addAsset: (asset: FinanceAsset) => void;
-  updateAssetRentReason: (assetName: string, reason: string) => void;
-  addLoan: (loan: FinanceLoan) => void;
-  toggleLoanPaid: (index: number) => void;
-  updateRetirement: (params: Partial<RetirementParams>) => void;
+  fetchBackendData: () => Promise<void>;
+  setUserNetCashFlow: (amount: number | null) => Promise<void>;
+  addAsset: (asset: FinanceAsset) => Promise<void>;
+  updateAssetRentReason: (assetName: string, reason: string) => Promise<void>;
+  addLoan: (loan: FinanceLoan) => Promise<void>;
+  toggleLoanPaid: (index: number) => Promise<void>;
+  updateRetirement: (params: Partial<RetirementParams>) => Promise<void>;
   setSelectedRecordCategory: (cat: string | null) => void;
-  attachDocumentToRecord: (cat: string, index: number, docName: string) => void;
+  attachDocumentToRecord: (cat: string, index: number, docName: string) => Promise<void>;
   setIsSyncingSms: (loading: boolean) => void;
   applySmsSyncData: (summary: SmsSyncSummary, transactions: ParsedBankTransaction[]) => void;
 }
 
-export const useFinanceStore = create<FinanceState>((set) => ({
+export const useFinanceStore = create<FinanceState>((set, get) => ({
   currentTab: 'overview',
   assets: FINANCE_ASSETS,
   loans: FINANCE_LOANS,
@@ -54,43 +59,141 @@ export const useFinanceStore = create<FinanceState>((set) => ({
   smsSyncSummary: null,
   parsedTransactions: [],
   isSyncingSms: false,
+  isLoading: false,
+  userNetCashFlow: null,
 
   setTab: (tab) => set({ currentTab: tab }),
 
-  addAsset: (newAsset) =>
+  setUserNetCashFlow: async (amount) => {
+    set({ userNetCashFlow: amount });
+    try {
+      await financeApi.createRecord({
+        category: 'Preferences',
+        title: 'Monthly Net Cash Flow',
+        maskedIdentifier: amount !== null ? `₹${amount}` : 'auto',
+        detail: 'User defined target monthly cash flow',
+        documentName: 'settings',
+      });
+    } catch (e) {
+      console.warn('[FinanceStore] Failed to save cash flow preference:', e);
+    }
+  },
+
+  fetchBackendData: async () => {
+    try {
+      set({ isLoading: true });
+      const [assets, loans, records, retirement, transactions] = await Promise.all([
+        financeApi.getAssets().catch(() => null),
+        financeApi.getLoans().catch(() => null),
+        financeApi.getRecords().catch(() => null),
+        financeApi.getRetirement().catch(() => null),
+        financeApi.getTransactions('all', 100).catch(() => null),
+      ]);
+
+      // Check for user-defined net cash flow
+      let savedUserCashFlow: number | null = null;
+      if (records && records['Preferences']) {
+        const pref = records['Preferences'].find((r: any) => r[0] === 'Monthly Net Cash Flow');
+        if (pref && pref[1] && pref[1] !== 'auto') {
+          const parsedVal = parseFloat(pref[1].replace(/[₹,]/g, ''));
+          if (!isNaN(parsedVal)) {
+            savedUserCashFlow = parsedVal;
+          }
+        }
+      }
+
+      set((state) => ({
+        assets: assets && assets.length > 0 ? assets : state.assets,
+        loans: loans && loans.length > 0 ? loans : state.loans,
+        records: records && Object.keys(records).length > 0 ? records : state.records,
+        retirement: retirement ? retirement : state.retirement,
+        parsedTransactions: transactions && transactions.length > 0 ? transactions : state.parsedTransactions,
+        userNetCashFlow: savedUserCashFlow !== null ? savedUserCashFlow : state.userNetCashFlow,
+        isLoading: false,
+      }));
+    } catch (e) {
+      console.warn('[FinanceStore] Offline fallback active:', e);
+      set({ isLoading: false });
+    }
+  },
+
+  addAsset: async (newAsset) => {
+    // 1. Optimistic local update
     set((state) => ({
       assets: [...state.assets, newAsset],
-    })),
+    }));
 
-  updateAssetRentReason: (assetName, reason) =>
+    // 2. Sync to Backend
+    try {
+      await financeApi.createAsset(newAsset);
+    } catch (e) {
+      console.warn('[FinanceStore] Failed to save asset to backend:', e);
+    }
+  },
+
+  updateAssetRentReason: async (assetName, reason) => {
     set((state) => ({
       assets: state.assets.map((a) =>
         a.name === assetName ? { ...a, status: reason } : a
       ),
-    })),
+    }));
 
-  addLoan: (newLoan) =>
+    try {
+      const asset = get().assets.find((a) => a.name === assetName);
+      if (asset && (asset as any).id) {
+        await financeApi.updateAssetRent((asset as any).id, reason);
+      }
+    } catch (e) {
+      console.warn('[FinanceStore] Failed to update rent status on backend:', e);
+    }
+  },
+
+  addLoan: async (newLoan) => {
     set((state) => ({
       loans: [...state.loans, newLoan],
-    })),
+    }));
 
-  toggleLoanPaid: (index) =>
+    try {
+      await financeApi.createLoan(newLoan);
+    } catch (e) {
+      console.warn('[FinanceStore] Failed to save loan to backend:', e);
+    }
+  },
+
+  toggleLoanPaid: async (index) => {
+    const loan = get().loans[index];
     set((state) => {
       const updated = [...state.loans];
       if (updated[index]) {
         updated[index] = { ...updated[index], paid: !updated[index].paid };
       }
       return { loans: updated };
-    }),
+    });
 
-  updateRetirement: (params) =>
+    try {
+      if (loan && (loan as any).id) {
+        await financeApi.toggleLoanPaid((loan as any).id);
+      }
+    } catch (e) {
+      console.warn('[FinanceStore] Failed to toggle loan on backend:', e);
+    }
+  },
+
+  updateRetirement: async (params) => {
     set((state) => ({
       retirement: { ...state.retirement, ...params },
-    })),
+    }));
+
+    try {
+      await financeApi.updateRetirement(params);
+    } catch (e) {
+      console.warn('[FinanceStore] Failed to update retirement on backend:', e);
+    }
+  },
 
   setSelectedRecordCategory: (cat) => set({ selectedRecordCategory: cat }),
 
-  attachDocumentToRecord: (cat, index, docName) =>
+  attachDocumentToRecord: async (cat, index, docName) => {
     set((state) => {
       const catList = state.records[cat] ? [...state.records[cat]] : [];
       if (catList[index]) {
@@ -104,31 +207,59 @@ export const useFinanceStore = create<FinanceState>((set) => ({
           [cat]: catList,
         },
       };
-    }),
+    });
+
+    try {
+      const item = get().records[cat]?.[index];
+      if (item) {
+        await financeApi.createRecord({
+          category: cat,
+          title: item[0],
+          maskedIdentifier: item[1],
+          detail: item[2],
+          documentName: item[3],
+        });
+      }
+    } catch (e) {
+      console.warn('[FinanceStore] Failed to sync document to backend:', e);
+    }
+  },
 
   setIsSyncingSms: (loading) => set({ isSyncingSms: loading }),
 
   applySmsSyncData: (summary, transactions) =>
     set((state) => {
-      // 1. Update Accounts in Records catalog with detected bank accounts from SMS
       const updatedRecords = { ...state.records };
-      const currentAccounts = [...(updatedRecords['Accounts'] || [])];
 
-      for (const acc of summary.accountsFound) {
-        const exists = currentAccounts.some((it) => it[1].includes(acc.mask));
-        if (!exists) {
-          const balStr = acc.lastBalance ? `₹${acc.lastBalance.toLocaleString('en-IN')}` : 'Verified';
-          currentAccounts.push([
-            acc.bank,
-            acc.mask,
-            balStr,
-            'SMS Verified',
-          ]);
-        }
-      }
+      // Set verified bank accounts
+      const currentAccounts: RecordItem[] = summary.accountsFound.map((acc) => {
+        const balStr = acc.lastBalance !== undefined ? `₹${acc.lastBalance.toLocaleString('en-IN')}` : 'Verified';
+        return [
+          acc.bank,
+          acc.mask,
+          balStr,
+          'SMS Verified',
+        ];
+      });
       updatedRecords['Accounts'] = currentAccounts;
 
-      // 2. Add any detected bills to Alerts if not already present
+      // Populate Credit Cards found in SMS (deduplicated)
+      const currentCards: RecordItem[] = [];
+      for (const tx of transactions) {
+        if (/card/i.test(tx.rawBody) && tx.accountMask) {
+          const exists = currentCards.some((it) => it[1] === tx.accountMask);
+          if (!exists) {
+            currentCards.push([
+              `${tx.bankName} Card`,
+              tx.accountMask,
+              tx.dueDate ? `Due ${tx.dueDate}` : 'Active Card',
+              'SMS Verified',
+            ]);
+          }
+        }
+      }
+      updatedRecords['Credit cards'] = currentCards;
+
       const updatedAlerts = [...state.alerts];
       for (const tx of transactions) {
         if (tx.type === 'bill') {

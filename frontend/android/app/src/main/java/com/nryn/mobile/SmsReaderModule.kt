@@ -23,8 +23,6 @@ class SmsReaderModule(reactContext: ReactApplicationContext) : ReactContextBaseJ
     fun getAllSms(options: ReadableMap?, promise: Promise) {
         try {
             val contentResolver = reactApplicationContext.contentResolver
-            val uri = Uri.parse("content://sms/inbox")
-
             val projection = arrayOf("_id", "address", "body", "date", "date_sent")
 
             val maxCount = if (options != null && options.hasKey("maxCount")) {
@@ -33,13 +31,34 @@ class SmsReaderModule(reactContext: ReactApplicationContext) : ReactContextBaseJ
                 -1 // No limit: fetch all history
             }
 
-            val cursor: Cursor? = contentResolver.query(
-                uri,
-                projection,
-                null,
-                null,
-                "date DESC"
-            )
+            // Query incoming SMS directly from content://sms/inbox (official Android Telephony Inbox URI)
+            val inboxUri = Uri.parse("content://sms/inbox")
+            var cursor: Cursor? = null
+            try {
+                cursor = contentResolver.query(
+                    inboxUri,
+                    projection,
+                    null,
+                    null,
+                    "date DESC"
+                )
+            } catch (e: Exception) {
+                // Fallback attempt below
+            }
+
+            if (cursor == null || cursor.count == 0) {
+                try {
+                    cursor = contentResolver.query(
+                        Uri.parse("content://sms"),
+                        projection,
+                        null,
+                        null,
+                        "date DESC"
+                    )
+                } catch (e: Exception) {
+                    // Ignore
+                }
+            }
 
             val smsList = Arguments.createArray()
             var count = 0
