@@ -12,6 +12,8 @@ healthRouter.post('/wearables/sync', healthController.syncWearables);
 healthRouter.post('/wearables/connect', healthController.connectWearable);
 healthRouter.post('/wearables/disconnect', healthController.disconnectWearable);
 healthRouter.get('/wearables/scan', healthController.scanNearbyWearables);
+healthRouter.post('/wearables/garmin/connect', healthController.connectGarmin);
+healthRouter.post('/wearables/garmin/sync', healthController.syncGarmin);
 
 // Phone Sensors (No-Watch Mode)
 healthRouter.post('/phone/sync-steps', healthController.syncPhoneSteps);

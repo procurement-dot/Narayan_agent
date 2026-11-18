@@ -13,7 +13,12 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "NRYN requires microphone access to record voice meetings and generate automated Minutes of Meeting (MoM)."
+        "NSMicrophoneUsageDescription": "NRYN requires microphone access to record voice meetings and generate automated Minutes of Meeting (MoM).",
+        "NSBluetoothAlwaysUsageDescription": "NRYN requires Bluetooth access to connect to your Garmin smartwatch and stream live health telemetry.",
+        "NSBluetoothPeripheralUsageDescription": "NRYN requires Bluetooth access to communicate with smartwatches.",
+        "NSCameraUsageDescription": "NRYN requires camera access to measure heart rate pulse and scan nutrition plates.",
+        "NSHealthShareUsageDescription": "NRYN reads steps, heart rate, and sleep data to optimize your marathon training plan.",
+        "NSHealthUpdateUsageDescription": "NRYN syncs training workouts to Apple Health."
       }
     },
     "android": {
@@ -23,11 +28,25 @@
         "backgroundColor": "#fdfcf9"
       },
       "permissions": [
-        "android.permission.RECORD_AUDIO",
         "android.permission.INTERNET",
+        "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.READ_SMS",
-        "android.permission.RECEIVE_SMS"
+        "android.permission.RECEIVE_SMS",
+        "android.permission.CAMERA",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.health.READ_STEPS",
+        "android.permission.health.READ_HEART_RATE",
+        "android.permission.health.READ_SLEEP",
+        "android.permission.health.READ_DISTANCE",
+        "android.permission.health.READ_TOTAL_CALORIES_BURNED"
       ]
     },
     "web": {

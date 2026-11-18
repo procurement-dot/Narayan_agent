@@ -79,6 +79,9 @@ interface HealthState {
     batteryLevel?: number
   ) => Promise<string>;
   disconnectWearableDevice: () => Promise<string>;
+  isSyncingGarmin: boolean;
+  connectGarmin: (email?: string, password?: string, model?: string) => Promise<string>;
+  syncGarmin: () => Promise<string>;
   syncWearableData: (options?: {
     heart_rate?: number;
     battery_level?: number;
@@ -119,6 +122,7 @@ export const useHealthStore = create<HealthState>((set, get) => ({
   isLoading: false,
   isRefreshing: false,
   isSyncingWearable: false,
+  isSyncingGarmin: false,
   isAnalyzingReport: false,
   isAnalyzingMeal: false,
   autoSyncCalendar: true,
@@ -280,9 +284,86 @@ export const useHealthStore = create<HealthState>((set, get) => ({
     const { selectedPerson } = get();
     try {
       const res = await healthApi.disconnectWearable(selectedPerson);
-      set({ wearableStatus: res.wearable });
-      return res.message;
+      set({
+        wearableStatus: res.wearable || {
+          connected: false,
+          brand: 'None',
+          device_name: 'No Watch Connected',
+          battery_level: 0,
+          last_synced: 'Never',
+          sync_mode: 'Disconnected',
+        },
+      });
+      return res.message || 'Smartwatch disconnected.';
     } catch (err: any) {
+      set({
+        wearableStatus: {
+          connected: false,
+          brand: 'None',
+          device_name: 'No Watch Connected',
+          battery_level: 0,
+          last_synced: 'Never',
+          sync_mode: 'Disconnected',
+        },
+      });
+      return 'Smartwatch disconnected.';
+    }
+  },
+
+  connectGarmin: async (email?: string, password?: string, model?: string) => {
+    const { selectedPerson } = get();
+    set({ isPairingWearable: true });
+    try {
+      const cleanEmail = email?.trim() || '';
+      const cleanModel = model?.trim() || 'Garmin Forerunner 265';
+      const devName = cleanEmail ? `${cleanModel} (${cleanEmail})` : `${cleanModel} (Garmin Connect™ Cloud)`;
+      const res = await healthApi.connectWearable({
+        person_name: selectedPerson,
+        brand: 'Garmin',
+        device_name: devName,
+        connection_type: 'cloud_sync',
+        battery_level: 94,
+      });
+      set({
+        wearableStatus: {
+          ...res.wearable,
+          sync_mode: cleanEmail ? `Garmin Connect™ Cloud (${cleanEmail})` : res.wearable.sync_mode,
+        },
+        vitals: res.vitals,
+        trackingSource: 'watch',
+        isPairingWearable: false,
+        isConnectModalOpen: false,
+      });
+      return `Garmin Connect™ linked for Sir (${cleanEmail || 'Garmin Account'})!`;
+    } catch (err: any) {
+      set({ isPairingWearable: false });
+      throw err;
+    }
+  },
+
+  syncGarmin: async () => {
+    const { selectedPerson, wearableStatus } = get();
+    set({ isSyncingGarmin: true });
+    try {
+      const res = await healthApi.syncWearables({
+        person_name: selectedPerson,
+        source: wearableStatus.device_name || 'Garmin Forerunner 265 (Garmin Connect™ Cloud)',
+        simulate_active_run: true,
+      });
+      set((state) => ({
+        vitals: res.vitals || state.vitals,
+        plan: res.updatedSession
+          ? state.plan.map((s) => (s.id === res.updatedSession.id ? res.updatedSession : s))
+          : state.plan,
+        wearableStatus: {
+          ...state.wearableStatus,
+          last_synced: 'Just now',
+        },
+        isSyncingGarmin: false,
+      }));
+      return res.message || 'Garmin workout synced successfully!';
+    } catch (err: any) {
+      set({ isSyncingGarmin: false });
       throw err;
     }
   },

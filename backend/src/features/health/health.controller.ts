@@ -74,6 +74,32 @@ export const healthController = {
     }
   },
 
+  // Connect Garmin Connect™ Account
+  async connectGarmin(req: Request, res: Response) {
+    try {
+      const { person_name, email, model } = req.body;
+      const result = await healthService.connectGarminAccount(
+        person_name || 'Self',
+        email || 'sir.garmin@gmail.com',
+        model || 'Garmin Forerunner 265'
+      );
+      res.json({ success: true, data: result });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  },
+
+  // Sync Garmin Connect™ Cloud Telemetry
+  async syncGarmin(req: Request, res: Response) {
+    try {
+      const { person_name } = req.body;
+      const result = await healthService.syncGarminCloud(person_name || 'Self');
+      res.json({ success: true, data: result });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  },
+
   // Scan Nearby Bluetooth BLE Devices
   async scanNearbyWearables(req: Request, res: Response) {
     try {

@@ -1,18 +1,27 @@
 import axios from 'axios';
+import { Platform } from 'react-native';
 import { getDeviceUserId } from '../utils/deviceUser';
 
-const isLocalhost =
+const isWeb = Platform.OS === 'web';
+
+const isLocalhostWeb =
+  isWeb &&
   typeof window !== 'undefined' &&
   (window.location.hostname === 'localhost' ||
     window.location.hostname === '127.0.0.1' ||
     window.location.hostname.startsWith('192.168.') ||
     window.location.hostname.startsWith('10.'));
 
-const defaultBaseUrl = isLocalhost
+const defaultWebUrl = isLocalhostWeb && typeof window !== 'undefined'
   ? `http://${window.location.hostname}:4000/api`
   : 'https://narayan-agent.onrender.com/api';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || defaultBaseUrl;
+const envUrl = process.env.EXPO_PUBLIC_API_URL;
+
+// On mobile native (APK), 'localhost' points to the phone itself, so fallback to cloud backend
+const API_BASE_URL = !isWeb && (!envUrl || envUrl.includes('localhost') || envUrl.includes('127.0.0.1'))
+  ? 'https://narayan-agent.onrender.com/api'
+  : (envUrl || defaultWebUrl);
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
