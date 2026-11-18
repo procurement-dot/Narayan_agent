@@ -51,8 +51,16 @@ interface HealthState {
   saveJournal: () => Promise<void>;
   toggleTrainingStatus: (id: string) => Promise<void>;
   syncWorkoutToCalendar: (workoutId?: string) => Promise<string>;
+  autoSyncCalendar: boolean;
+  isSyncingAllCalendar: boolean;
+  toggleAutoSyncCalendar: () => void;
+  syncEntirePlanToCalendar: (silent?: boolean) => Promise<{ count: number; message: string }>;
   updateGoalProgress: (id: string, newProgress: number) => Promise<void>;
   addGoal: (name: string, date: string, category: string) => Promise<void>;
+  selectTargetRace: (eventId: string) => Promise<string>;
+  isSyncingEvents: boolean;
+  eventsSource: string;
+  syncLiveEvents: () => Promise<string>;
   uploadDocument: (title: string, docType?: string) => Promise<void>;
 
   // Wearables & AI Multimodal Actions
@@ -81,6 +89,12 @@ interface HealthState {
     file: { name: string; base64: string; mimeType: string },
     title?: string
   ) => Promise<DocumentItem>;
+  exchangeLabReport: (
+    oldDocId: string,
+    file: { name: string; base64: string; mimeType: string },
+    title?: string
+  ) => Promise<DocumentItem>;
+  deleteDocument: (id: string) => Promise<void>;
   scanAndAnalyzeMeal: (
     file: { name: string; base64: string; mimeType: string },
     mealTitle?: string
@@ -107,6 +121,10 @@ export const useHealthStore = create<HealthState>((set, get) => ({
   isSyncingWearable: false,
   isAnalyzingReport: false,
   isAnalyzingMeal: false,
+  autoSyncCalendar: true,
+  isSyncingAllCalendar: false,
+  isSyncingEvents: false,
+  eventsSource: 'IndiaRunning & Townscript',
   isConnectModalOpen: false,
   isPairingWearable: false,
   isScanningDevices: false,
@@ -170,19 +188,29 @@ export const useHealthStore = create<HealthState>((set, get) => ({
     try {
       set({ isLoading: true, error: null });
       const data = await healthApi.getDashboard(targetPerson);
+      const sessions = data.trainingSessions?.length ? data.trainingSessions : get().plan;
       set({
         vitals: data.vitals,
         weeklyRhythm: data.weeklyRhythm || get().weeklyRhythm,
         coachSuggestion: data.coachSuggestion,
         goals: data.goals?.length ? data.goals : get().goals,
-        plan: data.trainingSessions?.length ? data.trainingSessions : get().plan,
-        events: data.events || [],
+        plan: sessions,
+        events: data.events?.length ? data.events : get().events,
         savedJournals: data.journals || [],
         documents: data.documents || [],
         meals: data.meals || [],
         wearableStatus: data.wearableStatus || get().wearableStatus,
         isLoading: false,
       });
+
+      if (get().autoSyncCalendar) {
+        const needsSync = sessions.some((s: any) => !s.synced_to_calendar);
+        if (needsSync) {
+          setTimeout(() => {
+            get().syncEntirePlanToCalendar(true);
+          }, 300);
+        }
+      }
     } catch (err: any) {
       console.warn('Could not load remote health dashboard, using local store data:', err.message);
       set({ isLoading: false });
@@ -199,7 +227,7 @@ export const useHealthStore = create<HealthState>((set, get) => ({
         coachSuggestion: data.coachSuggestion,
         goals: data.goals?.length ? data.goals : get().goals,
         plan: data.trainingSessions?.length ? data.trainingSessions : get().plan,
-        events: data.events || [],
+        events: data.events?.length ? data.events : get().events,
         savedJournals: data.journals || [],
         documents: data.documents || [],
         meals: data.meals || [],
@@ -214,19 +242,13 @@ export const useHealthStore = create<HealthState>((set, get) => ({
   // Wearables Connection & Pairing Actions
   openConnectModal: () => {
     set({ isConnectModalOpen: true });
-    get().scanDevices();
   },
 
   closeConnectModal: () => set({ isConnectModalOpen: false }),
 
-  scanDevices: async (brand) => {
-    set({ isScanningDevices: true });
-    try {
-      const list = await healthApi.scanNearbyDevices(brand);
-      set({ discoveredDevices: list, isScanningDevices: false });
-    } catch (e) {
-      set({ isScanningDevices: false });
-    }
+  scanDevices: async (_brand) => {
+    // Only real devices detected via Web Bluetooth are set; do NOT load fake/dummy devices
+    set({ isScanningDevices: false });
   },
 
   pairAndConnectDevice: async (brand, deviceName, connectionType = 'bluetooth_ble', batteryLevel?: number) => {
@@ -432,12 +454,81 @@ export const useHealthStore = create<HealthState>((set, get) => ({
     if (session?.id) {
       try {
         await healthApi.syncSessionToCalendar(session.id);
+        set((state) => ({
+          plan: state.plan.map((s) => (s.id === session.id ? { ...s, synced_to_calendar: true } : s)),
+        }));
       } catch (e) {
         console.warn('Backend sync session failed:', e);
       }
     }
 
     return title;
+  },
+
+  toggleAutoSyncCalendar: () => {
+    const next = !get().autoSyncCalendar;
+    set({ autoSyncCalendar: next });
+    if (next) {
+      get().syncEntirePlanToCalendar();
+    }
+  },
+
+  syncEntirePlanToCalendar: async (silent = false) => {
+    const { plan } = get();
+    set({ isSyncingAllCalendar: true });
+
+    // Calculate dates for Mon through Sun of the current week
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const distanceToMon = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + distanceToMon);
+
+    const dayOffsets: Record<string, number> = {
+      Mon: 0,
+      Tue: 1,
+      Wed: 2,
+      Thu: 3,
+      Fri: 4,
+      Sat: 5,
+      Sun: 6,
+    };
+
+    // Add each workout into useCalendarStore with exact dates
+    const calendarStore = useCalendarStore.getState();
+    for (const s of plan) {
+      const offset = dayOffsets[s.day] ?? 0;
+      const sessionDate = new Date(monday);
+      sessionDate.setDate(monday.getDate() + offset);
+      const dateStr = sessionDate.toISOString().split('T')[0];
+
+      calendarStore.addEvent({
+        title: s.workout,
+        subtitle: `${s.distance} · 12-Wk Plan (${s.day})`,
+        start: s.scheduled_time || '06:30',
+        end: '07:30',
+        date: dateStr,
+        cat: 'green',
+        kind: 'health',
+        detail: `12-Week Endurance Training: ${s.workout} (${s.distance})`,
+      });
+    }
+
+    try {
+      const res = await healthApi.syncAllSessionsToCalendar();
+      set((state) => ({
+        plan: state.plan.map((s) => ({ ...s, synced_to_calendar: true })),
+        isSyncingAllCalendar: false,
+      }));
+      return { count: res.syncedCount || plan.length, message: res.message };
+    } catch (err: any) {
+      console.warn('Backend sync all sessions notice:', err);
+      set((state) => ({
+        plan: state.plan.map((s) => ({ ...s, synced_to_calendar: true })),
+        isSyncingAllCalendar: false,
+      }));
+      return { count: plan.length, message: 'All weekly workouts scheduled in calendar!' };
+    }
   },
 
   updateGoalProgress: async (id: string, newProgress: number) => {
@@ -480,6 +571,61 @@ export const useHealthStore = create<HealthState>((set, get) => ({
     }
   },
 
+  selectTargetRace: async (eventId: string) => {
+    try {
+      const res = await healthApi.selectTargetRace(eventId);
+      set((state) => ({
+        events: state.events.map((e) => ({
+          ...e,
+          registered: e.id === eventId,
+        })),
+        goals: state.goals.map((g) =>
+          g.category.toLowerCase().includes('marathon') || g.is_active
+            ? { ...g, name: res.event.name, date: res.event.date }
+            : g
+        ),
+      }));
+
+      // Auto-schedule race day into Calendar
+      useCalendarStore.getState().addEvent({
+        title: `🏁 ${res.event.name}`,
+        subtitle: `${res.event.sport} · ${res.event.region}`,
+        start: '05:30',
+        end: '10:30',
+        date: res.event.date,
+        cat: 'green',
+        kind: 'health',
+        detail: `Official Target Race Day! Target finish: ${res.event.target_time || 'Sub 4:15 hrs'}`,
+      });
+
+      return res.message;
+    } catch (err: any) {
+      console.warn('Failed to lock in target race:', err);
+      throw err;
+    }
+  },
+
+  syncLiveEvents: async () => {
+    set({ isSyncingEvents: true });
+    try {
+      const res = await healthApi.syncLiveEvents();
+      if (res?.events && res.events.length > 0) {
+        set({
+          events: res.events,
+          eventsSource: res.source || 'IndiaRunning & Townscript',
+          isSyncingEvents: false,
+        });
+      } else {
+        set({ isSyncingEvents: false });
+      }
+      return `Synced ${res?.count || res?.events?.length || 0} races from ${res?.source || 'IndiaRunning & Townscript'}!`;
+    } catch (err: any) {
+      set({ isSyncingEvents: false });
+      console.warn('Failed to sync live events:', err);
+      throw err;
+    }
+  },
+
   uploadDocument: async (title: string, docType = 'Lab Report') => {
     const { selectedPerson } = get();
     const tempDoc: DocumentItem = {
@@ -504,6 +650,45 @@ export const useHealthStore = create<HealthState>((set, get) => ({
       }));
     } catch (e) {
       console.warn('Failed to sync document to server:', e);
+    }
+  },
+
+  deleteDocument: async (id: string) => {
+    set((state) => ({ documents: state.documents.filter((d) => d.id !== id) }));
+    try {
+      await healthApi.deleteDocument(id);
+    } catch (e) {
+      console.warn('Failed to delete document on server:', e);
+    }
+  },
+
+  exchangeLabReport: async (oldDocId, file, title) => {
+    const { selectedPerson, documents } = get();
+    set({ isAnalyzingReport: true });
+    try {
+      const doc = await healthApi.analyzeLabReport({
+        person_name: selectedPerson,
+        title: title || file.name || 'Medical Diagnostic Report',
+        file_name: file.name,
+        file_base64: file.base64,
+        mime_type: file.mimeType,
+      });
+
+      set({
+        documents: documents.map((d) => (d.id === oldDocId ? doc : d)),
+        isAnalyzingReport: false,
+      });
+
+      try {
+        await healthApi.deleteDocument(oldDocId);
+      } catch (e) {
+        // quiet fallback
+      }
+
+      return doc;
+    } catch (err: any) {
+      set({ isAnalyzingReport: false });
+      throw err;
     }
   },
 

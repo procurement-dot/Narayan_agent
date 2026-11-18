@@ -19,6 +19,10 @@ const envSchema = z.object({
   LLM_MODEL: z.string().default('google/gemini-3.5-flash'),
   OPENROUTER_BASE_URL: z.string().default('https://openrouter.ai/api/v1'),
   JWT_SECRET: z.string().default('default_jwt_secret'),
+  SIPS_SUPABASE_URL: z.string().optional().default('https://tlorepamqatsmrdpsttx.supabase.co'),
+  SIPS_SUPABASE_KEY: z.string().optional().default('sb_publishable_yLXE201tGNBWp4H49FdIlQ_OICGk29t'),
+  SIPS_EMAIL: z.string().optional().default('admin@kindersports.in'),
+  SIPS_PASSWORD: z.string().optional().default('Admin@2026'),
 });
 
 export const env = envSchema.parse(process.env);

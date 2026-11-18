@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const PersonNameSchema = z.enum(['Self', 'Neha', 'Prayan']);
+export const PersonNameSchema = z.enum(['Self', 'Neha', 'Prayan', 'Sulbha', 'Girish']);
 export type PersonName = z.infer<typeof PersonNameSchema>;
 
 export const LogVitalsDto = z.object({
@@ -51,10 +51,14 @@ export type CreateTrainingSessionInput = z.infer<typeof CreateTrainingSessionDto
 export const CreateEventDto = z.object({
   name: z.string().min(1, 'Event name is required'),
   sport: z.string().default('Running'),
-  region: z.enum(['Local', 'India', 'International']).default('Local'),
+  category: z.string().optional(),
+  region: z.enum(['Nearby', 'Local', 'India', 'International']).default('Nearby'),
   date: z.string().min(1, 'Event date is required'),
   registered: z.boolean().default(false),
   target_time: z.string().optional(),
+  location: z.string().optional(),
+  source: z.string().optional(),
+  link: z.string().optional(),
 });
 export type CreateEventInput = z.infer<typeof CreateEventDto>;
 

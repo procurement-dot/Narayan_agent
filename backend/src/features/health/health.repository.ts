@@ -64,10 +64,14 @@ export interface SportsEventRecord {
   user_id: string;
   name: string;
   sport: string;
-  region: 'Local' | 'India' | 'International';
+  category?: string;
+  region: 'Nearby' | 'Local' | 'India' | 'International';
   date: string;
   registered: boolean;
   target_time?: string;
+  location?: string;
+  source?: string;
+  link?: string;
   created_at: string;
 }
 
@@ -205,6 +209,38 @@ function getDefaultHealthData(): HealthDatabaseState {
         sleep_target_minutes: 540,
         hydration_target_liters: 2.0,
         recovery_baseline: 0,
+        blood_group: 'O+',
+        connected_wearable: {
+          connected: false,
+          brand: 'None',
+          device_name: 'No Watch Connected',
+          battery_level: 0,
+          last_synced: 'Never',
+          sync_mode: 'Disconnected',
+        },
+      },
+      Sulbha: {
+        person_name: 'Sulbha',
+        resting_hr_baseline: 67,
+        sleep_target_minutes: 450,
+        hydration_target_liters: 2.0,
+        recovery_baseline: 70,
+        blood_group: 'B+',
+        connected_wearable: {
+          connected: false,
+          brand: 'None',
+          device_name: 'No Watch Connected',
+          battery_level: 0,
+          last_synced: 'Never',
+          sync_mode: 'Disconnected',
+        },
+      },
+      Girish: {
+        person_name: 'Girish',
+        resting_hr_baseline: 64,
+        sleep_target_minutes: 450,
+        hydration_target_liters: 2.2,
+        recovery_baseline: 72,
         blood_group: 'O+',
         connected_wearable: {
           connected: false,
@@ -615,14 +651,18 @@ export const healthRepository = {
 
   async createSportsEvent(input: CreateEventInput): Promise<SportsEventRecord> {
     const newEvent: SportsEventRecord = {
-      id: `se-${Date.now()}`,
+      id: `se-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       user_id: '00000000-0000-0000-0000-000000000000',
       name: input.name,
       sport: input.sport,
+      category: input.category,
       region: input.region,
       date: input.date,
       registered: input.registered,
       target_time: input.target_time,
+      location: input.location,
+      source: input.source,
+      link: input.link,
       created_at: new Date().toISOString(),
     };
 
@@ -639,6 +679,22 @@ export const healthRepository = {
     db.events.push(newEvent);
     saveHealthDatabase(db);
     return newEvent;
+  },
+
+  async updateSportsEvent(id: string, updates: Partial<SportsEventRecord>): Promise<SportsEventRecord | null> {
+    db = loadHealthDatabase();
+    const idx = db.events.findIndex((e) => e.id === id);
+    if (idx === -1) return null;
+    db.events[idx] = { ...db.events[idx], ...updates };
+    saveHealthDatabase(db);
+    return db.events[idx];
+  },
+
+  async saveAllSportsEvents(events: SportsEventRecord[]): Promise<SportsEventRecord[]> {
+    db = loadHealthDatabase();
+    db.events = events;
+    saveHealthDatabase(db);
+    return db.events;
   },
 
   // Journals
@@ -755,6 +811,22 @@ export const healthRepository = {
     db.documents.unshift(newDoc);
     saveHealthDatabase(db);
     return newDoc;
+  },
+
+  async deleteDocument(id: string): Promise<boolean> {
+    if (isSupabaseConfigured()) {
+      try {
+        await supabase.from('health_documents').delete().eq('id', id);
+      } catch (err) {
+        console.warn('Supabase deleteDocument failed, fallback:', err);
+      }
+    }
+    db = loadHealthDatabase();
+    if (db.documents) {
+      db.documents = db.documents.filter((d) => d.id !== id);
+      saveHealthDatabase(db);
+    }
+    return true;
   },
 
   // Nutrition / Smart Plate Meal Logs

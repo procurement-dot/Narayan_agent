@@ -53,7 +53,7 @@ function loadData(): WorkDataStructure {
     projects: [],
     invoices: [],
     deals: [],
-    team_ops: { total_staff: 24, present_count: 22, departments: [], tickets: [] },
+    team_ops: { total_staff: 0, present_count: 0, departments: [], tickets: [] },
     ea_signals: [],
     external_apps: [],
   };
@@ -80,7 +80,7 @@ export const workRepository = {
         FROM work_projects p
         ORDER BY p.created_at DESC
       `);
-      if (rows && rows.length > 0) return rows as WorkProject[];
+      if (rows) return rows as WorkProject[];
     } catch (err) {
       console.warn('DB getProjects failed, falling back to local store:', err);
     }
@@ -209,7 +209,7 @@ export const workRepository = {
   async getInvoices(): Promise<WorkInvoice[]> {
     try {
       const rows = await db.query('SELECT * FROM work_invoices ORDER BY due_date ASC');
-      if (rows && rows.length > 0) return rows as WorkInvoice[];
+      if (rows) return rows as WorkInvoice[];
     } catch (err) {}
     const store = loadData();
     return store.invoices;
@@ -266,7 +266,7 @@ export const workRepository = {
   async getDeals(): Promise<WorkDeal[]> {
     try {
       const rows = await db.query('SELECT * FROM work_deals ORDER BY created_at DESC');
-      if (rows && rows.length > 0) return rows as WorkDeal[];
+      if (rows) return rows as WorkDeal[];
     } catch (err) {}
     const store = loadData();
     return store.deals;
@@ -324,8 +324,8 @@ export const workRepository = {
       const row = await db.queryOne('SELECT * FROM work_team_ops ORDER BY log_date DESC LIMIT 1');
       if (row) {
         return {
-          total_staff: row.total_staff,
-          present_count: row.present_count,
+          total_staff: Number(row.total_staff || 0),
+          present_count: Number(row.present_count || 0),
           departments: [],
           tickets: row.tickets || [],
         };
@@ -349,7 +349,7 @@ export const workRepository = {
   async getEASignals(): Promise<WorkEASignal[]> {
     try {
       const rows = await db.query('SELECT * FROM work_ea_signals WHERE is_resolved = false ORDER BY created_at DESC');
-      if (rows && rows.length > 0) return rows as WorkEASignal[];
+      if (rows) return rows as WorkEASignal[];
     } catch (err) {}
     const store = loadData();
     return store.ea_signals;
@@ -377,7 +377,7 @@ export const workRepository = {
   async getExternalApps(): Promise<WorkExternalApp[]> {
     try {
       const rows = await db.query('SELECT * FROM work_external_apps WHERE is_active = true ORDER BY name ASC');
-      if (rows && rows.length > 0) return rows as WorkExternalApp[];
+      if (rows) return rows as WorkExternalApp[];
     } catch (err) {}
     const store = loadData();
     return store.external_apps;

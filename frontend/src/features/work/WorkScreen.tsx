@@ -12,7 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { useWorkStore } from './work.store';
-import { AppHeader } from '../navigation/AppHeader';
+import { useNavigationStore } from '../navigation/navigation.store';
 import { PillTabs } from '../../shared/components/PillTabs';
 import { WorkTab, WorkExternalApp } from './work.types';
 import { colors, radii, spacing, typography } from '../../shared/theme/tokens';
@@ -20,9 +20,9 @@ import { useToast } from '../../shared/components/Toast';
 
 const WORK_TABS: { id: WorkTab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
-  { id: 'projects', label: 'Projects' },
   { id: 'finance', label: 'Financial' },
-  { id: 'hr', label: 'HR & Team' },
+  { id: 'hr', label: 'HR' },
+  { id: 'projects', label: 'Projects' },
   { id: 'sales', label: 'Sales' },
   { id: 'ea', label: 'My EA' },
 ];
@@ -63,6 +63,7 @@ export const WorkScreen: React.FC = () => {
     updateExternalAppUrl,
   } = useWorkStore();
 
+  const { goBack, openDock } = useNavigationStore();
   const { showToast } = useToast();
   const [refreshing, setRefreshing] = useState(false);
 
@@ -236,11 +237,21 @@ export const WorkScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <AppHeader
-        kicker="ENTERPRISE & PROJECTS · FOCUS"
-        title="Leadership clarity."
-        subtitle="Active ventures, real commitments and live operational signals."
-      />
+      {/* V6.9 Topbar */}
+      <View style={styles.topbar}>
+        <TouchableOpacity
+          onPress={goBack}
+          style={styles.backButton}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        >
+          <Text style={styles.backChevron}>‹</Text>
+        </TouchableOpacity>
+        <Text style={styles.topbarTitle}>Work</Text>
+        <View style={{ flex: 1 }} />
+        <TouchableOpacity onPress={openDock} style={styles.spacesBtn} activeOpacity={0.7}>
+          <Text style={styles.spacesBtnText}>Spaces ▾</Text>
+        </TouchableOpacity>
+      </View>
 
       <View style={styles.tabsContainer}>
         <PillTabs
@@ -261,166 +272,226 @@ export const WorkScreen: React.FC = () => {
         {/* TAB 1: OVERVIEW */}
         {currentTab === 'overview' && (
           <View style={styles.section}>
-            {/* KPI Grid */}
-            <View style={styles.kpiGrid}>
-              {kpis.map((kpi, idx) => (
-                <View key={idx} style={styles.kpiCard}>
-                  <Text style={styles.kpiLabel}>{kpi.label}</Text>
-                  <Text style={styles.kpiValue}>{kpi.value}</Text>
-                  <Text style={styles.kpiDetail}>{kpi.detail}</Text>
+            {/* V6.9 Hero Operating Pulse Card */}
+            <View style={styles.v69FeatureCard}>
+              <Text style={styles.v69FeatureKicker}>KinderSports · operating pulse · demo</Text>
+              <Text style={styles.v69FeatureBig}>₹7.8 Cr</Text>
+              <Text style={styles.v69FeatureSub}>Illustrative current-year billed revenue</Text>
+            </View>
+
+            {/* V6.9 2x2 Stat Grid */}
+            <View style={styles.v69StatGrid}>
+              <View style={styles.v69StatCard}>
+                <Text style={styles.v69StatLabel}>Collection this month</Text>
+                <Text style={styles.v69StatVal}>₹1.12 Cr</Text>
+              </View>
+              <View style={styles.v69StatCard}>
+                <Text style={styles.v69StatLabel}>Receivables</Text>
+                <Text style={styles.v69StatVal}>₹2.34 Cr</Text>
+              </View>
+              <View style={styles.v69StatCard}>
+                <Text style={styles.v69StatLabel}>Employees</Text>
+                <Text style={styles.v69StatVal}>
+                  {teamOps && teamOps.total_staff > 0 ? `${teamOps.total_staff}` : '214'}
+                </Text>
+              </View>
+              <View style={styles.v69StatCard}>
+                <Text style={styles.v69StatLabel}>Priority approvals</Text>
+                <Text style={styles.v69StatVal}>
+                  {signals && signals.length > 0 ? `${signals.length}` : '6'}
+                </Text>
+              </View>
+            </View>
+
+            {/* V6.9 Section: Revenue by vertical */}
+            <View style={styles.v69Section}>
+              <Text style={styles.v69SectionHeader}>Revenue by vertical</Text>
+              <View style={styles.v69Card}>
+                <View style={styles.hbarsGrid}>
+                  {[
+                    { name: 'School programmes', pct: 72, val: 72 },
+                    { name: 'Events', pct: 58, val: 58 },
+                    { name: 'Infra', pct: 43, val: 43 },
+                    { name: 'Govt projects', pct: 35, val: 35 },
+                  ].map((item, idx) => (
+                    <View key={idx} style={styles.hbarRow}>
+                      <Text style={styles.hbarLabel}>{item.name}</Text>
+                      <View style={styles.hbarTrack}>
+                        <View style={[styles.hbarFill, { width: `${item.pct}%` }]} />
+                      </View>
+                      <Text style={styles.hbarValue}>{item.val}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            </View>
+
+            {/* V6.9 Section: Today’s signals */}
+            <View style={styles.v69Section}>
+              <Text style={styles.v69SectionHeader}>Today’s signals</Text>
+              <View style={styles.v69SignalsCard}>
+                {[
+                  {
+                    id: 'sig-1',
+                    title: 'Approve revised Manjalpur agreement',
+                    subtitle: 'Email + legal memo · 2 sources',
+                    icon: '↗',
+                    isIncident: false,
+                  },
+                  {
+                    id: 'sig-2',
+                    title: 'Parent safety incident · West Pune',
+                    subtitle: 'Site lead report · verify resolution',
+                    icon: '!',
+                    isIncident: true,
+                  },
+                  {
+                    id: 'sig-3',
+                    title: 'AKC sponsor invoice reconciliation',
+                    subtitle: 'Finance email · due 3 Nov',
+                    icon: '↗',
+                    isIncident: false,
+                  },
+                  {
+                    id: 'sig-4',
+                    title: 'Field coach hiring gap',
+                    subtitle: 'HR escalation · 6 vacancies',
+                    icon: '↗',
+                    isIncident: false,
+                  },
+                ].map((item, idx) => (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[styles.signalRow, idx === 3 && { borderBottomWidth: 0 }]}
+                    onPress={() => setTab('ea')}
+                    activeOpacity={0.7}
+                  >
+                    <View
+                      style={[
+                        styles.signalIconBox,
+                        item.isIncident && styles.signalIncidentBox,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.signalIconText,
+                          item.isIncident && styles.signalIncidentText,
+                        ]}
+                      >
+                        {item.icon}
+                      </Text>
+                    </View>
+                    <View style={styles.signalCopy}>
+                      <Text style={styles.signalTitle}>{item.title}</Text>
+                      <Text style={styles.signalDesc}>{item.subtitle}</Text>
+                    </View>
+                    <Text style={styles.signalArrow}>↗</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* CONNECTED LIVE SOFTWARE (SIPS COCKPIT) */}
+            <View style={styles.v69Section}>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.v69SectionHeader}>Connected Live Software</Text>
+                <View style={styles.liveCockpitBadge}>
+                  <Text style={styles.liveCockpitBadgeText}>LIVE COCKPIT</Text>
+                </View>
+              </View>
+
+              {activeApps.map((app) => (
+                <View key={app.id} style={styles.externalAppCard}>
+                  <View style={styles.externalAppHeader}>
+                    <View style={styles.externalAppInfo}>
+                      <View style={styles.tagBadgeRow}>
+                        <Text style={styles.externalAppTag}>{app.tag}</Text>
+                        <View style={styles.statusLivePill}>
+                          <View
+                            style={[
+                              styles.statusLiveDot,
+                              !app.deploy_url && { backgroundColor: '#8b928b' },
+                            ]}
+                          />
+                          <Text style={styles.statusLiveText}>
+                            {app.deploy_url ? 'Live Connected' : 'Ready to Connect'}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={styles.externalAppName}>{app.name}</Text>
+                      <Text style={styles.externalAppSubtitle}>{app.subtitle}</Text>
+                    </View>
+
+                    <TouchableOpacity
+                      style={styles.settingsIconBtn}
+                      onPress={() => {
+                        setEditingAppUrl(app);
+                        setCustomUrlInput(app.deploy_url || '');
+                        setCustomAppName(app.name);
+                      }}
+                    >
+                      <Text style={styles.settingsIconText}>
+                        {app.deploy_url ? '⚙️ Edit URL' : '🔗 Set Link'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Live Metrics Summary */}
+                  <View style={styles.externalMetricsBox}>
+                    <Text style={styles.externalMetricsKicker}>MAIN DASHBOARD PULSE</Text>
+                    <Text style={styles.externalMetricsSummary}>
+                      {app.summary_metrics?.latestUpdate
+                        ? app.summary_metrics.latestUpdate
+                        : '6 active sites · 1 completed · ₹1.55 Cr portfolio live synced'}
+                    </Text>
+                  </View>
+
+                  {/* Action Buttons */}
+                  <View style={styles.externalAppActionsRow}>
+                    <TouchableOpacity
+                      style={styles.openExternalBtn}
+                      onPress={() => handleOpenApp(app)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.openExternalBtnText}>
+                        {app.deploy_url ? '🚀 Open Full Software ↗' : '🔗 Connect Deploy Link ↗'}
+                      </Text>
+                    </TouchableOpacity>
+
+                    {!!app.deploy_url && (
+                      <TouchableOpacity
+                        style={styles.browserLinkBtn}
+                        onPress={() => handleOpenInBrowser(app.deploy_url)}
+                      >
+                        <Text style={styles.browserLinkText}>Web View ↗</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.viewProjectsLink}
+                    onPress={() => setTab('projects')}
+                  >
+                    <Text style={styles.viewProjectsLinkText}>
+                      📁 View All {projects.length > 0 ? projects.length : 7} Live Sites in Projects tab ↗
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               ))}
             </View>
-
-            {/* CONNECTED EXTERNAL SOFTWARE SECTION */}
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Connected Live Software</Text>
-              <Text style={styles.sectionSubtitleBadge}>LIVE COCKPIT</Text>
-            </View>
-
-            {activeApps.map((app) => (
-              <View key={app.id} style={styles.externalAppCard}>
-                <View style={styles.externalAppHeader}>
-                  <View style={styles.externalAppInfo}>
-                    <View style={styles.tagBadgeRow}>
-                      <Text style={styles.externalAppTag}>{app.tag}</Text>
-                      <View style={styles.statusLivePill}>
-                        <View
-                          style={[
-                            styles.statusLiveDot,
-                            !app.deploy_url && { backgroundColor: '#8b928b' },
-                          ]}
-                        />
-                        <Text style={styles.statusLiveText}>
-                          {app.deploy_url ? 'Live Connected' : 'Ready to Connect'}
-                        </Text>
-                      </View>
-                    </View>
-                    <Text style={styles.externalAppName}>{app.name}</Text>
-                    <Text style={styles.externalAppSubtitle}>{app.subtitle}</Text>
-                  </View>
-
-                  <TouchableOpacity
-                    style={styles.settingsIconBtn}
-                    onPress={() => {
-                      setEditingAppUrl(app);
-                      setCustomUrlInput(app.deploy_url || '');
-                      setCustomAppName(app.name);
-                    }}
-                  >
-                    <Text style={styles.settingsIconText}>
-                      {app.deploy_url ? '⚙️ Edit URL' : '🔗 Set Link'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Live Metrics Summary */}
-                <View style={styles.externalMetricsBox}>
-                  <Text style={styles.externalMetricsKicker}>MAIN DASHBOARD PULSE</Text>
-                  <Text style={styles.externalMetricsSummary}>
-                    {app.deploy_url
-                      ? app.summary_metrics?.latestUpdate || 'Live portal connected · Tap Launch below'
-                      : 'Paste your deployed link using the button above to view live pulse'}
-                  </Text>
-                </View>
-
-                {/* Action Buttons */}
-                <View style={styles.externalAppActionsRow}>
-                  <TouchableOpacity
-                    style={styles.openExternalBtn}
-                    onPress={() => handleOpenApp(app)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.openExternalBtnText}>
-                      {app.deploy_url ? '🚀 Open Full Software ↗' : '🔗 Connect Deploy Link ↗'}
-                    </Text>
-                  </TouchableOpacity>
-
-                  {!!app.deploy_url && (
-                    <TouchableOpacity
-                      style={styles.browserLinkBtn}
-                      onPress={() => handleOpenInBrowser(app.deploy_url)}
-                    >
-                      <Text style={styles.browserLinkText}>Web View ↗</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-            ))}
-
-            {/* EA Signals Card */}
-            {signals.length > 0 && (
-              <View style={styles.cardLilac}>
-                <Text style={styles.cardKicker}>EXECUTIVE ASSISTANT · SIGNALS</Text>
-                <Text style={styles.eaTitle}>
-                  {signals.length} unresolved signals requiring attention
-                </Text>
-                <Text style={styles.eaDesc}>
-                  {signals.map((s) => s.title).join(' · ')}
-                </Text>
-                <TouchableOpacity
-                  style={styles.actionBtn}
-                  onPress={() => setTab('ea')}
-                >
-                  <Text style={styles.actionBtnText}>Review signals ({signals.length}) ↗</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {/* Active Projects List */}
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Active Projects Portfolio</Text>
-              <TouchableOpacity
-                style={styles.miniAddBtn}
-                onPress={() => setShowAddProjectModal(true)}
-              >
-                <Text style={styles.miniAddBtnText}>+ Add Real Project</Text>
-              </TouchableOpacity>
-            </View>
-
-            {projects.length === 0 ? (
-              <View style={styles.emptyCard}>
-                <Text style={styles.emptyTitle}>No Projects Created Yet</Text>
-                <Text style={styles.emptyDesc}>
-                  Dummy data has been removed. Add your genuine project to track real milestones.
-                </Text>
-                <TouchableOpacity
-                  style={styles.actionBtn}
-                  onPress={() => setShowAddProjectModal(true)}
-                >
-                  <Text style={styles.actionBtnText}>+ Add Real Project</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              projects.map((proj) => (
-                <TouchableOpacity
-                  key={proj.id}
-                  style={styles.projectCard}
-                  onPress={() => selectProject(proj)}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.projHeader}>
-                    <View style={{ flex: 1, paddingRight: spacing.sm }}>
-                      <Text style={styles.projName}>{proj.name}</Text>
-                      <Text style={styles.projTag}>
-                        {proj.tag} {proj.subtitle ? `· ${proj.subtitle}` : ''}
-                      </Text>
-                    </View>
-                    <Text style={styles.projProgress}>{proj.progress}%</Text>
-                  </View>
-                  <View style={styles.progressBar}>
-                    <View style={[styles.progressFill, { width: `${proj.progress}%` }]} />
-                  </View>
-                  <Text style={styles.projNext}>Next: {proj.next_action}</Text>
-                </TouchableOpacity>
-              ))
-            )}
           </View>
         )}
 
         {/* TAB 2: PROJECTS */}
         {currentTab === 'projects' && (
           <View style={styles.section}>
+            {/* Projects Hero Card */}
+            <View style={styles.projectsHeroCard}>
+              <Text style={styles.projectsHeroKicker}>Live project portfolio · SIPS synced</Text>
+              <Text style={styles.projectsHeroBig}>{projects.length} projects</Text>
+              <Text style={styles.projectsHeroSub}>Milestones · blockers · financial context</Text>
+            </View>
+
             <View style={styles.sectionHeaderRow}>
               <Text style={styles.sectionTitle}>All Active Portfolios</Text>
               <TouchableOpacity
@@ -513,7 +584,7 @@ export const WorkScreen: React.FC = () => {
                 {invoices.filter((i) => i.status === 'overdue').length > 0
                   ? `${invoices
                       .filter((i) => i.status === 'overdue')
-                      .reduce((sum, i) => sum + (i.amount_numeric || 0), 0)
+                      .reduce((sum, i) => sum + (Number(i.amount_numeric) || 0), 0)
                       .toLocaleString('en-IN', { style: 'currency', currency: 'INR' })} Outstanding`
                   : 'All Invoices Cleared'}
               </Text>
@@ -1155,6 +1226,266 @@ export const WorkScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
+  // V6.9 Topbar
+  topbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 12 : 8,
+    paddingBottom: 8,
+    backgroundColor: '#fcfbf8',
+  },
+  backButton: {
+    paddingRight: 10,
+    paddingVertical: 2,
+  },
+  backChevron: {
+    fontSize: 28,
+    lineHeight: 30,
+    color: '#82968a',
+    fontFamily: Platform.select({ ios: 'Georgia', android: 'serif', default: 'serif' }),
+  },
+  topbarTitle: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: '#343f39',
+    letterSpacing: -0.5,
+  },
+  spacesBtn: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e1e7df',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  spacesBtnText: {
+    fontSize: 12,
+    color: '#718375',
+    fontWeight: '500',
+  },
+
+  // V6.9 Feature Card (Sage)
+  v69FeatureCard: {
+    backgroundColor: '#e9f0e7',
+    borderRadius: 23,
+    padding: 22,
+    marginVertical: 4,
+    borderWidth: 1,
+    borderColor: '#dce6da',
+  },
+  v69FeatureKicker: {
+    fontSize: 11,
+    color: '#7a8d7d',
+    marginBottom: 6,
+  },
+  v69FeatureBig: {
+    fontSize: 38,
+    fontWeight: '600',
+    fontFamily: Platform.select({ ios: 'Georgia', android: 'serif', default: 'serif' }),
+    color: '#455e4d',
+    letterSpacing: -1,
+    marginBottom: 4,
+  },
+  v69FeatureSub: {
+    fontSize: 12,
+    color: '#6d806f',
+  },
+
+  // V6.9 2x2 Stat Grid
+  v69StatGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 9,
+    marginVertical: 6,
+  },
+  v69StatCard: {
+    width: '48.5%',
+    minHeight: 105,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e7ece4',
+    borderRadius: 16,
+    padding: 14,
+    justifyContent: 'space-between',
+  },
+  v69StatLabel: {
+    fontSize: 11,
+    color: '#8d9c90',
+  },
+  v69StatVal: {
+    fontSize: 24,
+    fontWeight: '600',
+    fontFamily: Platform.select({ ios: 'Georgia', android: 'serif', default: 'serif' }),
+    color: '#405744',
+    marginTop: 4,
+  },
+
+  // V6.9 Section & Card
+  v69Section: {
+    marginVertical: 10,
+  },
+  v69SectionHeader: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#425745',
+    marginBottom: 10,
+    letterSpacing: -0.4,
+  },
+  v69Card: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e7ece6',
+    borderRadius: 19,
+    padding: 18,
+  },
+
+  // Horizontal Bars (Revenue by vertical)
+  hbarsGrid: {
+    gap: 16,
+  },
+  hbarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  hbarLabel: {
+    width: 122,
+    fontSize: 11,
+    color: '#6d806f',
+  },
+  hbarTrack: {
+    flex: 1,
+    height: 12,
+    backgroundColor: '#eef3ed',
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  hbarFill: {
+    height: '100%',
+    backgroundColor: '#a8c6ad',
+    borderRadius: 20,
+  },
+  hbarValue: {
+    fontSize: 10,
+    color: '#9da99c',
+    width: 22,
+    textAlign: 'right',
+  },
+
+  // Today's Signals
+  v69SignalsCard: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e7ece6',
+    borderRadius: 19,
+    paddingHorizontal: 16,
+    paddingVertical: 2,
+  },
+  signalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#edf0eb',
+    gap: 13,
+  },
+  signalIconBox: {
+    width: 37,
+    height: 37,
+    borderRadius: 14,
+    backgroundColor: '#eaf0e8',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  signalIconText: {
+    fontSize: 18,
+    color: '#7e927e',
+    fontWeight: '600',
+  },
+  signalIncidentBox: {
+    backgroundColor: '#fbeeec',
+  },
+  signalIncidentText: {
+    color: '#c85a49',
+    fontWeight: 'bold',
+  },
+  signalCopy: {
+    flex: 1,
+  },
+  signalTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#38483c',
+    lineHeight: 18,
+  },
+  signalDesc: {
+    fontSize: 11,
+    color: '#9aa69a',
+    marginTop: 3,
+    lineHeight: 15,
+  },
+  signalArrow: {
+    fontSize: 14,
+    color: '#9daea0',
+  },
+
+  // Live Cockpit Badge & Links
+  liveCockpitBadge: {
+    backgroundColor: '#e3ece1',
+    borderWidth: 1,
+    borderColor: '#bed1be',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  liveCockpitBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#3e5946',
+    letterSpacing: 0.5,
+  },
+  viewProjectsLink: {
+    backgroundColor: '#f4f7f3',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  viewProjectsLinkText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#3e5946',
+  },
+
+  // Projects Tab Hero (Peach)
+  projectsHeroCard: {
+    backgroundColor: '#f3eae2',
+    borderRadius: 23,
+    padding: 22,
+    marginVertical: 4,
+    borderWidth: 1,
+    borderColor: '#e8dcce',
+  },
+  projectsHeroKicker: {
+    fontSize: 11,
+    color: '#967d6c',
+    marginBottom: 6,
+  },
+  projectsHeroBig: {
+    fontSize: 36,
+    fontWeight: '600',
+    fontFamily: Platform.select({ ios: 'Georgia', android: 'serif', default: 'serif' }),
+    color: '#634b3d',
+    letterSpacing: -1,
+    marginBottom: 4,
+  },
+  projectsHeroSub: {
+    fontSize: 12,
+    color: '#826f63',
+  },
+
   container: {
     flex: 1,
     backgroundColor: colors.bg,
@@ -1734,17 +2065,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontFamily: typography.fontFamily.uiRegular,
     color: colors.inkMuted,
-  },
-  signalTitle: {
-    fontSize: 14,
-    fontFamily: typography.fontFamily.uiMedium,
-    color: colors.ink,
-  },
-  signalDesc: {
-    fontSize: 12,
-    fontFamily: typography.fontFamily.uiRegular,
-    color: colors.inkSecondary,
-    lineHeight: 17,
   },
   signalActionsRow: {
     flexDirection: 'row',

@@ -220,6 +220,16 @@ export const healthController = {
     }
   },
 
+  async syncAllSessionsToCalendar(req: Request, res: Response) {
+    try {
+      const week = req.body?.week ? Number(req.body.week) : undefined;
+      const result = await healthService.syncAllSessionsToCalendar(week);
+      res.json({ success: true, data: result });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  },
+
   // Events
   async listSportsEvents(_req: Request, res: Response) {
     try {
@@ -227,6 +237,24 @@ export const healthController = {
       res.json({ success: true, data: events });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
+    }
+  },
+
+  async syncLiveEvents(_req: Request, res: Response) {
+    try {
+      const result = await healthService.syncLiveSportsEvents();
+      res.json({ success: true, data: result });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  },
+
+  async selectTargetRace(req: Request, res: Response) {
+    try {
+      const result = await healthService.selectTargetRace(req.params.id);
+      res.json({ success: true, data: result });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
     }
   },
 
@@ -281,6 +309,16 @@ export const healthController = {
       res.status(201).json({ success: true, data: doc });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });
+    }
+  },
+
+  async deleteDocument(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      await healthService.deleteDocument(id);
+      res.json({ success: true, message: 'Document deleted successfully', id });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
     }
   },
 

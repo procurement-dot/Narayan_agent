@@ -1,13 +1,14 @@
 export type HealthTab =
   | 'today'
-  | 'nutrition'
-  | 'plan'
   | 'goals'
+  | 'plan'
   | 'body'
+  | 'records'
+  | 'nutrition'
   | 'events'
   | 'journal';
 
-export type PersonName = 'Self' | 'Neha' | 'Prayan';
+export type PersonName = 'Self' | 'Neha' | 'Prayan' | 'Sulbha' | 'Girish';
 export type TrackingSource = 'watch' | 'phone';
 
 export interface HealthGoal {
@@ -33,14 +34,21 @@ export interface TrainingDay {
   synced_to_calendar?: boolean;
 }
 
+export type SportCategory = 'Running' | 'Swimming' | 'Cycling' | 'Triathlon' | 'Trail running';
+export type WhereFilter = 'Nearby' | 'India' | 'International';
+
 export interface SportsEvent {
   id: string;
   name: string;
   sport: string;
+  category?: string;
   region: string;
   date: string;
   registered?: boolean;
   target_time?: string;
+  location?: string;
+  source?: string;
+  link?: string;
 }
 
 export interface JournalEntry {
@@ -84,6 +92,7 @@ export interface Biomarker {
 
 export interface DocumentItem {
   id: string;
+  person_name?: PersonName;
   title: string;
   doc_type: string;
   file_url?: string;
@@ -121,7 +130,7 @@ export interface DiscoveredBleDevice {
   id: string;
   name: string;
   brand: string;
-  rssi: number;
+  rssi?: number;
   signal: string;
 }
 

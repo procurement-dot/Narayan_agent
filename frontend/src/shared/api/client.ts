@@ -1,6 +1,17 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://narayan-agent.onrender.com/api';
+const isLocalhost =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    window.location.hostname.startsWith('192.168.') ||
+    window.location.hostname.startsWith('10.'));
+
+const defaultBaseUrl = isLocalhost
+  ? `http://${window.location.hostname}:4000/api`
+  : 'https://narayan-agent.onrender.com/api';
+
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || defaultBaseUrl;
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
