@@ -41,76 +41,17 @@ export async function seedAllData() {
     console.warn('[SeedAll] notes seed skipped:', err);
   }
 
-  // 3. Seed Work Projects, Tasks, Invoices, Deals, Team Ops, EA Signals
+  // 3. Work Module (Zero Dummy Data - Clean and Auto-Dynamic)
   try {
-    const projCount = await db.queryOne('SELECT COUNT(*) as count FROM work_projects');
-    if (Number(projCount?.count || 0) === 0) {
-      console.log('[SeedAll] Seeding work module tables...');
-      
-      // Projects
-      const p1 = await db.queryOne(
-        `INSERT INTO work_projects (user_id, name, subtitle, tag, progress, next_action, owner, budget, status)
-         VALUES ('00000000-0000-0000-0000-000000000001', 'AKC Regional Season Planning', 'School partnerships & district tournament calendar', 'Sports Education', 65, 'Finalize school schedule', 'Narayan', '₹18.5 L', 'active')
-         RETURNING id`
-      );
-      if (p1) {
-        await db.query(`INSERT INTO work_project_tasks (project_id, title, is_completed, sort_order) VALUES
-          ($1, 'Draft regional tournament rules & guidelines', true, 1),
-          ($1, 'Distribute invite letters to partner schools', true, 2),
-          ($1, 'Confirm stadium booking with municipal authorities', false, 3)`, [p1.id]);
-      }
-
-      const p2 = await db.queryOne(
-        `INSERT INTO work_projects (user_id, name, subtitle, tag, progress, next_action, owner, budget, status)
-         VALUES ('00000000-0000-0000-0000-000000000001', 'Manjalpur Sports Complex Infrastructure', 'Phase 2 turf installation, lighting & contractor milestones', 'Civil Infra', 40, 'Contractor site inspection', 'Narayan', '₹45 L', 'active')
-         RETURNING id`
-      );
-      if (p2) {
-        await db.query(`INSERT INTO work_project_tasks (project_id, title, is_completed, sort_order) VALUES
-          ($1, 'Complete sub-base civil grading', true, 1),
-          ($1, 'Turf roll inspection & drainage testing', false, 2),
-          ($1, 'High-mast LED floodlight installation', false, 3)`, [p2.id]);
-      }
-
-      // Invoices
-      await db.query(`
-        INSERT INTO work_invoices (user_id, invoice_number, client_name, vertical, amount, amount_numeric, due_date, status) VALUES
-        ('00000000-0000-0000-0000-000000000001', 'INV-2026-088', 'Delhi Public School', 'School programmes', '₹3,40,000', 340000, CURRENT_DATE + INTERVAL '7 days', 'pending'),
-        ('00000000-0000-0000-0000-000000000001', 'INV-2026-074', 'Gujarat State Athletics Association', 'Events', '₹5,20,000', 520000, CURRENT_DATE - INTERVAL '3 days', 'overdue'),
-        ('00000000-0000-0000-0000-000000000001', 'INV-2026-061', 'Vadodara Municipal Corp', 'Govt projects', '₹12,80,000', 1280000, CURRENT_DATE - INTERVAL '15 days', 'paid')
-      `);
-
-      // Deals
-      await db.query(`
-        INSERT INTO work_deals (user_id, client_name, deal_value, deal_value_numeric, stage, contact_person, next_action) VALUES
-        ('00000000-0000-0000-0000-000000000001', 'St. Xavier''s Athletic Curriculum', '₹8.5 L', 850000, 'proposal', 'Fr. Thomas', 'Send customized proposal'),
-        ('00000000-0000-0000-0000-000000000001', 'National Games Logistics & Equipment', '₹24 L', 2400000, 'negotiation', 'Sports Ministry Sec.', 'Executive review meeting'),
-        ('00000000-0000-0000-0000-000000000001', 'Baroda High School Annual Package', '₹6.2 L', 620000, 'demo', 'Principal Joshi', 'Demonstration session for PT teachers')
-      `);
-
-      // Team Ops
-      await db.query(`
-        INSERT INTO work_team_ops (user_id, log_date, total_staff, present_count, open_vacancies, training_due, tickets)
-        VALUES ('00000000-0000-0000-0000-000000000001', CURRENT_DATE, 24, 22, 3, 5, '[{"id":"tk-1","title":"Coach certification renewal","priority":"medium","assignedTo":"HR Operations"},{"id":"tk-2","title":"Ground staff overtime approval","priority":"high","assignedTo":"Field Admin"}]'::jsonb)
-      `);
-
-      // EA Signals
-      await db.query(`
-        INSERT INTO work_ea_signals (user_id, title, description, source, category, priority, is_resolved) VALUES
-        ('00000000-0000-0000-0000-000000000001', 'Vendor Milestone Clearance Required', 'Civil contractor submitted Phase 2 completion certificate for Manjalpur project.', 'Email', 'decision', 'high', false),
-        ('00000000-0000-0000-0000-000000000001', 'Quarterly GST 3B Compliance Review', 'Accounts team flagged draft reconciliation for Q3 filings.', 'System', 'review', 'medium', false)
-      `);
-
-      // External Apps
-      await db.query(`
-        INSERT INTO work_external_apps (user_id, name, app_key, deploy_url, status, summary_metrics, is_active) VALUES
-        ('00000000-0000-0000-0000-000000000001', 'Infra Project Tracker', 'infra_tracker', 'https://infra-tracker.onrender.com', 'connected', '{"activeProjects": 3, "onTrack": 2, "delayed": 1, "latestUpdate": "Site grading completed on sector 4"}'::jsonb, true),
-        ('00000000-0000-0000-0000-000000000001', 'Enterprise Operations & Asset Manager', 'second_app', 'https://ops-manager.onrender.com', 'connected', '{"activeModules": 8, "pendingApprovals": 2, "latestUpdate": "Inventory audited for 12 centers"}'::jsonb, true)
-        ON CONFLICT (app_key) DO NOTHING
-      `);
-    }
+    // Ensure default external app anchors are configured without dummy metrics
+    await db.query(`
+      INSERT INTO work_external_apps (user_id, name, app_key, deploy_url, status, summary_metrics, is_active) VALUES
+      ('00000000-0000-0000-0000-000000000001', 'SIPS (Infra Project Tracker)', 'infra_tracker', 'https://sips-sports.vercel.app/', 'connected', '{"activeProjects": 0, "onTrack": 0, "delayed": 0, "latestUpdate": "Live portal connected"}'::jsonb, true),
+      ('00000000-0000-0000-0000-000000000001', 'Enterprise Operations & Asset Manager', 'second_app', '', 'ready', '{"activeModules": 0, "pendingApprovals": 0, "latestUpdate": "Connect your deployed link to view live pulse"}'::jsonb, true)
+      ON CONFLICT (app_key) DO NOTHING
+    `);
   } catch (err) {
-    console.warn('[SeedAll] work seed skipped:', err);
+    console.warn('[SeedAll] work external apps verify skipped:', err);
   }
 
   // 4. Seed Health Vitals and Goals

@@ -81,17 +81,17 @@ interface WorkState {
 const defaultExternalApps: WorkExternalApp[] = [
   {
     id: 'ext-infra',
-    name: 'Infra Project Tracker',
+    name: 'SIPS (Infra Project Tracker)',
     app_key: 'infra_tracker',
     subtitle: 'Civil construction, site inspections & contractor milestones',
     tag: 'Civil & Infra',
-    deploy_url: '',
+    deploy_url: 'https://sips-sports.vercel.app/',
     status: 'connected',
     summary_metrics: {
       activeProjects: 0,
       onTrack: 0,
       delayed: 0,
-      latestUpdate: 'Connect your deployed link to view live pulse',
+      latestUpdate: 'Live portal connected · Tap Launch below',
     },
     is_active: true,
   },
@@ -106,7 +106,7 @@ const defaultExternalApps: WorkExternalApp[] = [
     summary_metrics: {
       activeModules: 0,
       pendingApprovals: 0,
-      latestUpdate: 'Connect your deployed link to view live pulse',
+      latestUpdate: 'Paste your deployed link to connect live',
     },
     is_active: true,
   },

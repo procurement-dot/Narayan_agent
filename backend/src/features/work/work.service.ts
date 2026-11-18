@@ -1,4 +1,6 @@
 import { workRepository } from './work.repository.js';
+import { notesRepository } from '../notes/notes.repository.js';
+import { sipsService } from './sips.service.js';
 import {
   WorkOverviewData,
   WorkProject,
@@ -19,71 +21,130 @@ import {
 
 export const workService = {
   async getOverview(): Promise<WorkOverviewData> {
-    const [projects, invoices, deals, teamOps, eaSignals, externalApps] = await Promise.all([
+    const [localProjects, invoices, deals, teamOps, eaSignals, externalApps, sipsProjects, sipsMetrics] = await Promise.all([
       workRepository.getProjects(),
       workRepository.getInvoices(),
       workRepository.getDeals(),
       workRepository.getTeamOps(),
       workRepository.getEASignals(),
       workRepository.getExternalApps(),
+      sipsService.getProjects(),
+      sipsService.getSummaryMetrics(),
     ]);
+
+    const allProjects: WorkProject[] = [...sipsProjects, ...localProjects];
 
     // Calculate real dynamic KPIs based on actual database entries
     const overdueInvoices = invoices.filter((i) => i.status === 'overdue');
-    const totalReceivablesNumeric = overdueInvoices.reduce((sum, i) => sum + (i.amount_numeric || 0), 0);
+    const totalReceivablesNumeric = overdueInvoices.reduce((sum, i) => sum + (Number(i.amount_numeric) || 0), 0);
     const receivablesDisplay = totalReceivablesNumeric > 0
       ? `₹${(totalReceivablesNumeric / 100000).toFixed(2)} L`
       : '₹0';
 
     const activeDeals = deals.filter((d) => d.stage !== 'lost');
-    const pipelineTotalNumeric = activeDeals.reduce((sum, d) => sum + (d.deal_value_numeric || 0), 0);
+    const pipelineTotalNumeric = activeDeals.reduce((sum, d) => sum + (Number(d.deal_value_numeric) || 0), 0);
     const pipelineDisplay = pipelineTotalNumeric > 0
       ? `₹${(pipelineTotalNumeric / 100000).toFixed(2)} L`
       : '₹0';
 
-    const unresolvedSignals = eaSignals.filter((s) => !s.is_resolved);
+    const unresolvedSignals: WorkEASignal[] = [...eaSignals.filter((s) => !s.is_resolved)];
+
+    // Dynamically auto-synthesize live actionable signals from real Work meeting notes (MoM)
+    try {
+      const workNotes = await notesRepository.getNotes({ area: 'Work' });
+      for (const n of (workNotes || []).slice(0, 5)) {
+        if (n.mom_data && Array.isArray(n.mom_data.actions)) {
+          for (const act of n.mom_data.actions) {
+            const sigId = `sig-note-${n.id}-${encodeURIComponent(act.task.slice(0, 15))}`;
+            if (!unresolvedSignals.some((s) => s.title === act.task)) {
+              unresolvedSignals.push({
+                id: sigId,
+                title: act.task,
+                description: `Action item from note: "${n.title}". Assigned to ${act.assignee || 'Narayan'}, due ${act.due || 'ASAP'}.`,
+                source: 'System',
+                category: 'decision',
+                priority: 'high',
+                is_resolved: false,
+              });
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // Non-blocking note signal synthesis
+    }
 
     const attendanceRate = teamOps.total_staff > 0
       ? Math.round((teamOps.present_count / teamOps.total_staff) * 100)
       : 0;
 
+    const activeProjectsCount = allProjects.filter((p) => p.status === 'active').length;
+
     const kpis = [
       {
         label: 'Receivables',
         value: receivablesDisplay,
-        detail: overdueInvoices.length > 0 ? `${overdueInvoices.length} invoices overdue` : 'No overdue invoices',
+        detail: overdueInvoices.length > 0 ? `${overdueInvoices.length} invoices overdue` : 'All receivables cleared',
       },
       {
         label: 'Active Pipeline',
         value: pipelineDisplay,
-        detail: activeDeals.length > 0 ? `${activeDeals.length} active deals` : 'No open deals',
+        detail: activeDeals.length > 0 ? `${activeDeals.length} active deals` : 'No open pipeline',
       },
       {
         label: 'Team Attendance',
         value: teamOps.total_staff > 0 ? `${teamOps.present_count} / ${teamOps.total_staff}` : '0 / 0',
-        detail: teamOps.total_staff > 0 ? `${attendanceRate}% present today` : 'No team logs today',
+        detail: teamOps.total_staff > 0 ? `${attendanceRate}% present today` : 'No attendance logged today',
       },
       {
         label: 'Active Projects',
-        value: `${projects.length}`,
-        detail: projects.length > 0 ? `${projects.filter((p) => p.status === 'active').length} active projects` : 'No active projects',
+        value: `${activeProjectsCount}`,
+        detail: allProjects.length > 0 ? `${activeProjectsCount} active · ${allProjects.length} total in portfolio` : '0 active projects',
       },
     ];
+
+    // Live updated external apps
+    const updatedApps = externalApps.map((app) => {
+      const isSips = app.app_key === 'infra_tracker' || app.deploy_url.includes('sips') || app.name.includes('SIPS');
+      if (isSips && sipsMetrics) {
+        return {
+          ...app,
+          name: app.name.includes('SIPS') ? app.name : 'SIPS (Infra Project Tracker)',
+          status: 'connected' as const,
+          deploy_url: app.deploy_url.includes('sips') ? app.deploy_url : 'https://sips-sports.vercel.app/',
+          summary_metrics: {
+            activeProjects: sipsMetrics.activeProjects,
+            onTrack: Math.max(0, sipsMetrics.activeProjects - sipsMetrics.delayedProjects),
+            delayed: sipsMetrics.delayedProjects,
+            latestUpdate: sipsMetrics.latestUpdate,
+          },
+        };
+      }
+      return app;
+    });
 
     return {
       kpis,
       eaSignals: unresolvedSignals,
-      projects: projects.slice(0, 4),
-      externalApps,
+      projects: allProjects.slice(0, 6),
+      externalApps: updatedApps,
     };
   },
 
   // Projects
   async getProjects(): Promise<WorkProject[]> {
-    return workRepository.getProjects();
+    const [sipsProjects, localProjects] = await Promise.all([
+      sipsService.getProjects(),
+      workRepository.getProjects(),
+    ]);
+    return [...sipsProjects, ...localProjects];
   },
 
   async getProject(id: string): Promise<WorkProject | null> {
+    if (id.startsWith('sips-')) {
+      const sipsProjects = await sipsService.getProjects();
+      return sipsProjects.find((p) => p.id === id) || null;
+    }
     return workRepository.getProjectById(id);
   },
 
@@ -108,8 +169,8 @@ export const workService = {
     const invoices = await workRepository.getInvoices();
     const paidInvoices = invoices.filter((i) => i.status === 'paid');
     const overdueInvoices = invoices.filter((i) => i.status === 'overdue');
-    const totalCollected = paidInvoices.reduce((sum, i) => sum + (i.amount_numeric || 0), 0);
-    const totalOverdue = overdueInvoices.reduce((sum, i) => sum + (i.amount_numeric || 0), 0);
+    const totalCollected = paidInvoices.reduce((sum, i) => sum + (Number(i.amount_numeric) || 0), 0);
+    const totalOverdue = overdueInvoices.reduce((sum, i) => sum + (Number(i.amount_numeric) || 0), 0);
 
     return {
       revenue: totalCollected > 0 ? `₹${(totalCollected / 100000).toFixed(2)} L` : '₹0',
@@ -141,7 +202,7 @@ export const workService = {
   async getSalesPipeline() {
     const deals = await workRepository.getDeals();
     const activeDeals = deals.filter((d) => d.stage !== 'lost');
-    const pipelineTotal = activeDeals.reduce((sum, d) => sum + (d.deal_value_numeric || 0), 0);
+    const pipelineTotal = activeDeals.reduce((sum, d) => sum + (Number(d.deal_value_numeric) || 0), 0);
 
     return {
       pipelineTotal: pipelineTotal > 0 ? `₹${(pipelineTotal / 100000).toFixed(2)} L` : '₹0',
@@ -169,7 +230,32 @@ export const workService = {
 
   // EA
   async getEASignals(): Promise<WorkEASignal[]> {
-    return workRepository.getEASignals();
+    const dbSignals = await workRepository.getEASignals();
+    const unresolved: WorkEASignal[] = [...dbSignals.filter((s) => !s.is_resolved)];
+
+    try {
+      const workNotes = await notesRepository.getNotes({ area: 'Work' });
+      for (const n of (workNotes || []).slice(0, 5)) {
+        if (n.mom_data && Array.isArray(n.mom_data.actions)) {
+          for (const act of n.mom_data.actions) {
+            const sigId = `sig-note-${n.id}-${encodeURIComponent(act.task.slice(0, 15))}`;
+            if (!unresolved.some((s) => s.title === act.task)) {
+              unresolved.push({
+                id: sigId,
+                title: act.task,
+                description: `Action item from note: "${n.title}". Assigned to ${act.assignee || 'Narayan'}, due ${act.due || 'ASAP'}.`,
+                source: 'System',
+                category: 'decision',
+                priority: 'high',
+                is_resolved: false,
+              });
+            }
+          }
+        }
+      }
+    } catch {}
+
+    return unresolved;
   },
 
   async resolveEASignal(id: string): Promise<WorkEASignal | null> {

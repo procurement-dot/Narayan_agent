@@ -83,6 +83,9 @@ export const healthApi = {
     person_name: PersonName;
     source?: string;
     simulate_active_run?: boolean;
+    heart_rate?: number;
+    battery_level?: number;
+    steps?: number;
   }): Promise<{
     synced: boolean;
     source: string;
@@ -224,9 +227,29 @@ export const healthApi = {
     return res.data?.data;
   },
 
+  async syncAllSessionsToCalendar(week?: number): Promise<{
+    syncedCount: number;
+    sessions: any[];
+    calendarEvents: any[];
+    message: string;
+  }> {
+    const res = await apiClient.post('/health/training-plan/sync-all-to-calendar', { week });
+    return res.data?.data;
+  },
+
   async getEvents(): Promise<SportsEvent[]> {
     const res = await apiClient.get('/health/events');
     return res.data?.data || [];
+  },
+
+  async syncLiveEvents(): Promise<{ count: number; source: string; events: SportsEvent[] }> {
+    const res = await apiClient.post('/health/events/sync-live');
+    return res.data?.data;
+  },
+
+  async selectTargetRace(eventId: string): Promise<{ event: SportsEvent; message: string }> {
+    const res = await apiClient.post(`/health/events/${eventId}/select-target`);
+    return res.data?.data;
   },
 
   async createEvent(payload: Omit<SportsEvent, 'id'>): Promise<SportsEvent> {
@@ -263,5 +286,10 @@ export const healthApi = {
   }): Promise<DocumentItem> {
     const res = await apiClient.post('/health/documents', payload);
     return res.data?.data;
+  },
+
+  async deleteDocument(id: string): Promise<boolean> {
+    const res = await apiClient.delete(`/health/documents/${id}`);
+    return res.data?.success ?? true;
   },
 };

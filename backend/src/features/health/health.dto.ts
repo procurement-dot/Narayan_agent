@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const PersonNameSchema = z.enum(['Self', 'Neha', 'Prayan']);
+export const PersonNameSchema = z.enum(['Self', 'Neha', 'Prayan', 'Sulbha', 'Girish']);
 export type PersonName = z.infer<typeof PersonNameSchema>;
 
 export const LogVitalsDto = z.object({
@@ -51,10 +51,14 @@ export type CreateTrainingSessionInput = z.infer<typeof CreateTrainingSessionDto
 export const CreateEventDto = z.object({
   name: z.string().min(1, 'Event name is required'),
   sport: z.string().default('Running'),
-  region: z.enum(['Local', 'India', 'International']).default('Local'),
+  category: z.string().optional(),
+  region: z.enum(['Nearby', 'Local', 'India', 'International']).default('Nearby'),
   date: z.string().min(1, 'Event date is required'),
   registered: z.boolean().default(false),
   target_time: z.string().optional(),
+  location: z.string().optional(),
+  source: z.string().optional(),
+  link: z.string().optional(),
 });
 export type CreateEventInput = z.infer<typeof CreateEventDto>;
 
@@ -114,7 +118,10 @@ export type DisconnectWearableInput = z.infer<typeof DisconnectWearableDto>;
 export const SyncWearableDto = z.object({
   person_name: PersonNameSchema.default('Self'),
   source: z.string().default('Smartwatch'),
-  simulate_active_run: z.boolean().default(true),
+  simulate_active_run: z.boolean().default(false),
+  heart_rate: z.number().int().min(30).max(250).optional(),
+  battery_level: z.number().int().min(0).max(100).optional(),
+  steps: z.number().int().min(0).optional(),
 });
 export type SyncWearableInput = z.infer<typeof SyncWearableDto>;
 

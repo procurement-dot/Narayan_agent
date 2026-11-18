@@ -1,4 +1,5 @@
 import { healthRepository, Biomarker, DocumentRecord, MealLogRecord } from './health.repository.js';
+import { marathonFetcherService } from './marathon-fetcher.service.js';
 import {
   AnalyzeMealInput,
   AnalyzeReportInput,
@@ -27,7 +28,7 @@ export const healthService = {
       healthRepository.getLatestVitals(person),
       healthRepository.getGoals(),
       healthRepository.getTrainingSessions(4),
-      healthRepository.getSportsEvents(),
+      healthService.listSportsEvents(),
       healthRepository.getJournals(person),
       healthRepository.getDocuments(person),
       healthRepository.getMealLogs(person),
@@ -144,25 +145,18 @@ export const healthService = {
   },
 
   async scanNearbyBluetoothDevices(brand?: string) {
-    const devicePool: Record<string, string[]> = {
-      'Garmin': ['Garmin Forerunner 265 #8921', 'Garmin Forerunner 965 #304', 'Garmin Venu 3 #128'],
-      'Apple Watch': ['Apple Watch Ultra 2 (BLE)', 'Apple Watch Series 9 (BLE)', 'Apple Watch SE Gen 2'],
-      'Samsung Galaxy Watch': ['Galaxy Watch6 Classic (BT)', 'Galaxy Watch5 Pro (BT)', 'Galaxy Watch FE'],
-      'Noise': ['Noise ColorFit Pro 5 #3B8', 'Noise Pulse 2 Max #882', 'Noise Halo Plus'],
-      'boAt': ['boAt Wave Astra (BLE)', 'boAt Ultima Prism', 'boAt Storm Call 3'],
-      'Amazfit': ['Amazfit Cheetah Pro (BLE)', 'Amazfit Balance', 'Amazfit GTR 4'],
-      'Fitbit': ['Fitbit Charge 6 (BLE)', 'Fitbit Sense 2', 'Fitbit Versa 4'],
-      'Fire-Boltt': ['Fire-Boltt Gladiator BT', 'Fire-Boltt Invincible Plus'],
-    };
-
-    const list = (brand && devicePool[brand]) ? devicePool[brand] : Object.values(devicePool).flat().slice(0, 6);
-    return list.map((name, i) => ({
-      id: `ble-${i}-${name.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`,
-      name,
-      brand: brand || name.split(' ')[0],
-      rssi: -42 - (i * 7),
-      signal: i === 0 ? 'Strong (-42 dBm)' : i === 1 ? 'Good (-49 dBm)' : 'Fair (-56 dBm)',
-    }));
+    const currentWearable = healthRepository.getWearable('Self');
+    if (currentWearable.connected && currentWearable.device_name !== 'No Watch Connected') {
+      return [{
+        id: `paired-${currentWearable.device_name.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`,
+        name: currentWearable.device_name,
+        brand: currentWearable.brand || 'Smartwatch',
+        rssi: -45,
+        signal: 'Paired (Live)',
+      }];
+    }
+    // Return empty array: ONLY real physical Bluetooth devices discovered by browser appear
+    return [];
   },
 
   // Wearable Real-time Telemetry Sync Bridge
@@ -173,16 +167,17 @@ export const healthService = {
         ? input.source
         : currentWearable.connected
         ? currentWearable.device_name
-        : 'Garmin Venu 2 Plus';
+        : 'Smartwatch';
 
     console.log(`[Wearable Sync] Ingesting live telemetry from ${effectiveSource} for ${input.person_name}...`);
 
-    // Ingest latest biometric telemetry
-    const resting_hr = 50;
-    const sleep_duration_minutes = 462; // 7h 42m
-    const recovery_score = 92;
-    const steps_count = 9450;
-    const hydration_liters = 3.4;
+    // Ingest biometric telemetry (use real parameters if provided)
+    const existingVitals = await healthRepository.getLatestVitals(input.person_name);
+    const resting_hr = input.heart_rate ?? existingVitals?.resting_hr ?? 0;
+    const sleep_duration_minutes = existingVitals?.sleep_duration_minutes ?? 0;
+    const recovery_score = existingVitals?.recovery_score ?? 0;
+    const steps_count = input.steps ?? existingVitals?.steps_count ?? 0;
+    const hydration_liters = existingVitals?.hydration_liters ?? 0;
 
     const vitals = await healthRepository.logVitals({
       person_name: input.person_name,
@@ -191,11 +186,19 @@ export const healthService = {
       recovery_score,
       steps_count,
       hydration_liters,
-      energy_level: 'Optimal Adaptation',
+      energy_level: resting_hr > 0 ? (resting_hr < 75 ? 'Optimal Adaptation' : 'Active') : 'Connected',
       source: effectiveSource,
     });
 
+    if (input.battery_level !== undefined) {
+      await healthRepository.updateWearableSync(input.person_name, {
+        battery_level: input.battery_level,
+        last_synced: 'Just now',
+      });
+    }
+
     let updatedSession = null;
+    let activity = null;
     if (input.simulate_active_run) {
       // Find today's workout in week 4 and mark as completed
       const sessions = await healthRepository.getTrainingSessions(4);
@@ -208,14 +211,7 @@ export const healthService = {
           synced_to_calendar: true,
         });
       }
-    }
-
-    return {
-      synced: true,
-      source: effectiveSource,
-      synced_at: new Date().toISOString(),
-      vitals,
-      activity: {
+      activity = {
         type: 'Outdoor Running',
         distance: '8.1 km',
         duration: '39m 12s',
@@ -224,9 +220,20 @@ export const healthService = {
         max_hr: 172,
         calories_burned: 540,
         cadence: 178,
-      },
+      };
+    }
+
+    const hrText = input.heart_rate ? ` (HR: ${input.heart_rate} bpm)` : '';
+    const battText = input.battery_level !== undefined ? ` (Batt: ${input.battery_level}%)` : '';
+
+    return {
+      synced: true,
+      source: effectiveSource,
+      synced_at: new Date().toISOString(),
+      vitals,
+      activity,
       updatedSession,
-      message: `Successfully synchronized ${effectiveSource} telemetry. Workout auto-marked completed.`,
+      message: `Successfully synchronized ${effectiveSource} telemetry${hrText}${battText}.`,
     };
   },
 
@@ -571,7 +578,7 @@ You MUST respond ONLY with valid JSON matching this schema without any markdown 
   },
 
   async syncSessionToCalendar(id: string) {
-    const sessions = await healthRepository.getTrainingSessions(4);
+    const sessions = await healthRepository.getTrainingSessions();
     const session = sessions.find((s) => s.id === id);
     if (!session) throw new Error(`Training session ${id} not found`);
 
@@ -588,15 +595,110 @@ You MUST respond ONLY with valid JSON matching this schema without any markdown 
         end: '07:30',
         cat: 'green',
         kind: 'health',
-        subtitle: `${session.distance} · Training block Week 4`,
+        subtitle: `${session.distance} · Training block Week ${session.week_number || 1}`,
       },
       message: `Workout '${session.workout}' synced to daily calendar`,
     };
   },
 
-  // Events
+  async syncAllSessionsToCalendar(week?: number) {
+    const sessions = await healthRepository.getTrainingSessions(week);
+    const updatedSessions = [];
+    const calendarEvents = [];
+
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const distanceToMon = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + distanceToMon);
+
+    const dayOffsets: Record<string, number> = {
+      Mon: 0,
+      Tue: 1,
+      Wed: 2,
+      Thu: 3,
+      Fri: 4,
+      Sat: 5,
+      Sun: 6,
+    };
+
+    for (const session of sessions) {
+      const offset = dayOffsets[session.day_name] ?? 0;
+      const sessionDate = new Date(monday);
+      sessionDate.setDate(monday.getDate() + offset);
+      const dateStr = sessionDate.toISOString().split('T')[0];
+
+      const updated = await healthRepository.updateTrainingSession(session.id, {
+        synced_to_calendar: true,
+      });
+      if (updated) updatedSessions.push(updated);
+
+      calendarEvents.push({
+        id: `cal-workout-${session.id}`,
+        title: session.workout,
+        subtitle: `${session.distance} · 12-Wk Plan (${session.day_name})`,
+        start: session.scheduled_time || '06:30',
+        end: '07:30',
+        date: dateStr,
+        cat: 'green',
+        kind: 'health',
+        detail: `12-Week Endurance Training: ${session.workout} (${session.distance})`,
+      });
+    }
+
+    return {
+      syncedCount: updatedSessions.length,
+      sessions: updatedSessions,
+      calendarEvents,
+      message: `All ${updatedSessions.length} weekly workouts successfully auto-synced to your calendar!`,
+    };
+  },
+
+  // Events (Live Race Calendar Directory)
   async listSportsEvents() {
-    return healthRepository.getSportsEvents();
+    return marathonFetcherService.getOrSyncEvents();
+  },
+
+  async syncLiveSportsEvents() {
+    return marathonFetcherService.syncLiveMarathons();
+  },
+
+  async selectTargetRace(id: string) {
+    const events = await healthRepository.getSportsEvents();
+    const event = events.find((e) => e.id === id);
+    if (!event) throw new Error(`Race event with id ${id} not found`);
+
+    for (const e of events) {
+      await healthRepository.updateSportsEvent(e.id, { registered: e.id === id });
+    }
+
+    const updated = await healthRepository.updateSportsEvent(id, { registered: true });
+
+    const goals = await healthRepository.getGoals();
+    const existingMarathonGoal = goals.find((g) => g.category.toLowerCase().includes('marathon') || g.is_active);
+
+    if (existingMarathonGoal) {
+      await healthRepository.updateGoal(existingMarathonGoal.id, {
+        name: event.name,
+        date: event.date,
+        target_metric: event.sport.split('&')[0].trim(),
+        progress: 10,
+      });
+    } else {
+      await healthRepository.createGoal({
+        name: event.name,
+        date: event.date,
+        category: 'Marathon build',
+        target_metric: event.sport.split('&')[0].trim(),
+        current_metric: '0 km',
+        progress: 10,
+      });
+    }
+
+    return {
+      event: updated,
+      message: `🎯 '${event.name}' is now your locked-in Target Race! Training schedule & countdown updated.`,
+    };
   },
 
   async createSportsEvent(input: CreateEventInput) {
@@ -633,6 +735,10 @@ You MUST respond ONLY with valid JSON matching this schema without any markdown 
 
   async uploadDocument(input: UploadDocumentInput) {
     return healthRepository.saveDocument(input);
+  },
+
+  async deleteDocument(id: string) {
+    return healthRepository.deleteDocument(id);
   },
 
   async getFamilyProfiles() {

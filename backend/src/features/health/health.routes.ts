@@ -28,10 +28,13 @@ healthRouter.delete('/goals/:id', healthController.deleteGoal);
 healthRouter.get('/training-plan', healthController.getTrainingPlan);
 healthRouter.patch('/training-plan/sessions/:id', healthController.updateTrainingSession);
 healthRouter.post('/training-plan/sessions/:id/sync-calendar', healthController.syncSessionToCalendar);
+healthRouter.post('/training-plan/sync-all-to-calendar', healthController.syncAllSessionsToCalendar);
 
 // Events
 healthRouter.get('/events', healthController.listSportsEvents);
+healthRouter.post('/events/sync-live', healthController.syncLiveEvents);
 healthRouter.post('/events', healthController.createSportsEvent);
+healthRouter.post('/events/:id/select-target', healthController.selectTargetRace);
 
 // Journals & Reflections
 healthRouter.get('/journals', healthController.listJournals);
@@ -41,6 +44,7 @@ healthRouter.post('/journals', healthController.saveJournal);
 healthRouter.get('/documents', healthController.listDocuments);
 healthRouter.post('/documents', healthController.uploadDocument);
 healthRouter.post('/documents/analyze-report', healthController.analyzeLabReport);
+healthRouter.delete('/documents/:id', healthController.deleteDocument);
 
 // Smart Plate Food Photo Nutrition AI
 healthRouter.post('/nutrition/analyze-meal', healthController.analyzeMealPlate);

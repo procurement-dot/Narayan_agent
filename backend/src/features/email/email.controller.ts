@@ -146,8 +146,13 @@ export const emailController = {
       const result = await emailService.syncEmails(userId, maxResults);
       res.json({ message: 'Sync completed successfully.', result });
     } catch (err: any) {
-      console.error('Email sync failed:', err);
-      res.status(500).json({ error: err.message || 'Email sync failed.' });
+      const errorDetail =
+        err.response?.data?.error_description ||
+        err.response?.data?.error ||
+        err.message ||
+        'Email sync failed.';
+      console.error(`[EmailSync] Failed: ${errorDetail}`);
+      res.status(err.response?.status || 500).json({ error: errorDetail });
     }
   },
 

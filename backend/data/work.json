@@ -12,17 +12,17 @@
   "external_apps": [
     {
       "id": "ext-infra",
-      "name": "Infra Project Tracker",
+      "name": "SIPS (Infra Project Tracker)",
       "app_key": "infra_tracker",
       "subtitle": "Civil construction, site inspections & contractor milestones",
       "tag": "Civil & Infra",
-      "deploy_url": "",
-      "status": "ready",
+      "deploy_url": "https://sips-sports.vercel.app/",
+      "status": "connected",
       "summary_metrics": {
         "activeProjects": 0,
         "onTrack": 0,
         "delayed": 0,
-        "latestUpdate": "Paste your deployed link to connect live"
+        "latestUpdate": "Live portal connected"
       },
       "is_active": true
     },
@@ -37,7 +37,7 @@
       "summary_metrics": {
         "activeModules": 0,
         "pendingApprovals": 0,
-        "latestUpdate": "Paste your deployed link to connect live"
+        "latestUpdate": "Connect your deployed link to view live pulse"
       },
       "is_active": true
     }
