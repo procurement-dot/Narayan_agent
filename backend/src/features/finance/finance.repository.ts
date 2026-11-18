@@ -180,6 +180,11 @@ export const financeRepository = {
   },
 
   // ================= SMS TRANSACTIONS =================
+  async clearTransactions(userId = DEFAULT_USER_ID) {
+    await this.ensureTablesExist();
+    return db.query(`DELETE FROM finance_transactions WHERE user_id = $1`, [userId]);
+  },
+
   async upsertTransactionsBatch(userId = DEFAULT_USER_ID, transactions: any[]) {
     await this.ensureTablesExist();
     let insertedCount = 0;

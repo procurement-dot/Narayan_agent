@@ -108,8 +108,9 @@ export const financeController = {
 
   async syncSmsTransactions(req: Request, res: Response) {
     try {
+      const userId = (req as any).userId;
       const parsed = syncSmsBatchSchema.parse(req.body);
-      const result = await financeService.syncSmsTransactions(undefined, parsed.transactions);
+      const result = await financeService.syncSmsTransactions(userId, parsed.transactions);
       return res.json({ success: true, ...result });
     } catch (err: any) {
       console.error('[FinanceController] syncSmsTransactions error:', err);
@@ -119,9 +120,10 @@ export const financeController = {
 
   async getTransactions(req: Request, res: Response) {
     try {
+      const userId = (req as any).userId;
       const type = req.query.type as string | undefined;
       const limit = Number(req.query.limit) || 100;
-      const data = await financeService.getTransactions(undefined, type, limit);
+      const data = await financeService.getTransactions(userId, type, limit);
       return res.json(data);
     } catch (err: any) {
       return res.status(500).json({ error: 'Failed to fetch transactions' });

@@ -93,7 +93,13 @@ export const useEmailUiStore = create<EmailUiState>((set, get) => ({
       set({ isLoading: true });
       const data = await emailApi.listEmails(currentTab);
       if (Array.isArray(data) && data.length > 0) {
-        set({ emails: data });
+        const seenIds = new Set<string>();
+        const uniqueEmails = data.filter((item) => {
+          if (!item.id || seenIds.has(item.id)) return false;
+          seenIds.add(item.id);
+          return true;
+        });
+        set({ emails: uniqueEmails });
       } else if (!get().isConnected) {
         // If not connected and no DB rows, keep mock data visible
         set({ emails: mockData.emails as EmailItem[] });
@@ -135,36 +141,95 @@ export const useEmailUiStore = create<EmailUiState>((set, get) => ({
   connectGmail: async () => {
     try {
       const url = await emailApi.getOAuthUrl();
-      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const isWeb = (Platform.OS as string) === 'web';
+
+      if (isWeb && typeof window !== 'undefined') {
         const width = 500;
         const height = 650;
         const left = window.screenX + (window.outerWidth - width) / 2;
         const top = window.screenY + (window.outerHeight - height) / 2;
-        const popup = window.open(
+        window.open(
           url,
           'Gmail OAuth Authorization',
           `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no`
         );
 
-        // Poll for completion or closure of popup safely (guard against COOP)
-        if (popup) {
-          const checkTimer = setInterval(async () => {
-            let isClosed = false;
-            try {
-              isClosed = Boolean(popup.closed);
-            } catch (coopErr) {
-              // Browser COOP blocks cross-origin popup.closed check; ignore safely
-            }
+        let cleanedUp = false;
+        let pollTimer: NodeJS.Timeout | null = null;
+        let maxTimeout: NodeJS.Timeout | null = null;
+        let bc: BroadcastChannel | null = null;
 
-            if (isClosed) {
-              clearInterval(checkTimer);
-              await get().checkOAuthStatus();
-              await get().fetchSummary();
-              await get().fetchEmails();
+        const handleSuccess = async () => {
+          if (cleanedUp) return;
+          cleanup();
+          await get().checkOAuthStatus();
+          await get().fetchSummary();
+          await get().fetchEmails();
+        };
+
+        const cleanup = () => {
+          cleanedUp = true;
+          if (pollTimer) clearInterval(pollTimer);
+          if (maxTimeout) clearTimeout(maxTimeout);
+          try {
+            bc?.close();
+          } catch {}
+          window.removeEventListener('storage', onStorage);
+          window.removeEventListener('message', onMessage);
+          window.removeEventListener('focus', onFocus);
+        };
+
+        // 1. BroadcastChannel
+        try {
+          if (typeof BroadcastChannel !== 'undefined') {
+            bc = new BroadcastChannel('nryn_oauth');
+            bc.onmessage = (ev) => {
+              if (ev.data?.type === 'GMAIL_CONNECTED') {
+                handleSuccess();
+              }
+            };
+          }
+        } catch {}
+
+        // 2. Storage event
+        const onStorage = (ev: StorageEvent) => {
+          if (ev.key === 'nryn_gmail_connected') {
+            handleSuccess();
+          }
+        };
+        window.addEventListener('storage', onStorage);
+
+        // 3. PostMessage event
+        const onMessage = (ev: MessageEvent) => {
+          if (ev.data?.type === 'GMAIL_CONNECTED') {
+            handleSuccess();
+          }
+        };
+        window.addEventListener('message', onMessage);
+
+        // 4. Focus event
+        const onFocus = async () => {
+          const status = await emailApi.getOAuthStatus().catch(() => null);
+          if (status?.connected) {
+            handleSuccess();
+          }
+        };
+        window.addEventListener('focus', onFocus);
+
+        // 5. Periodic status poll against backend API (never touches popup object)
+        pollTimer = setInterval(async () => {
+          try {
+            const status = await emailApi.getOAuthStatus();
+            if (status.connected) {
+              handleSuccess();
             }
-          }, 1500);
-          setTimeout(() => clearInterval(checkTimer), 60000);
-        }
+          } catch {}
+        }, 2000);
+
+        // 6. Stop polling after 60s
+        maxTimeout = setTimeout(() => {
+          cleanup();
+        }, 60000);
       } else {
         await Linking.openURL(url);
       }

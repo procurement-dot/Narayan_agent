@@ -21,6 +21,9 @@ export const emailController = {
       const account = await emailService.handleOAuthCallback(code, userId);
       const safeEmail = account?.email || 'User';
 
+      res.setHeader('Cross-Origin-Opener-Policy', 'unsafe-none');
+      res.setHeader('Cross-Origin-Embedder-Policy', 'unsafe-none');
+
       res.send(`
         <!DOCTYPE html>
         <html>

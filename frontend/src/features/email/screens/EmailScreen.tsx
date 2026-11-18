@@ -218,7 +218,7 @@ export const EmailScreen: React.FC = () => {
           {displayedEmails.length > 0 ? (
             displayedEmails.map((email, index) => (
               <EmailRow
-                key={email.id}
+                key={`${email.id}-${index}`}
                 email={email}
                 statusOverride={mailStatus[email.id]}
                 isLast={index === displayedEmails.length - 1}

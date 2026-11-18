@@ -167,12 +167,18 @@ export const emailRepository = {
     let sql = `
       SELECT 
         e.*,
-        d.body as saved_draft,
-        p.id as proposal_id
+        (
+          SELECT d.body FROM email_drafts d 
+          WHERE d.email_id = e.id AND d.user_id = $1 
+          ORDER BY d.updated_at DESC LIMIT 1
+        ) as saved_draft,
+        (
+          SELECT p.id FROM proposals p 
+          WHERE p.email_id = e.id AND p.status != 'dismissed' AND p.user_id = $1 
+          ORDER BY p.created_at DESC LIMIT 1
+        ) as proposal_id
       FROM emails e
       JOIN email_accounts a ON a.id = e.account_id
-      LEFT JOIN email_drafts d ON d.email_id = e.id AND d.user_id = $1
-      LEFT JOIN proposals p ON p.email_id = e.id AND p.status != 'dismissed' AND p.user_id = $1
       WHERE a.user_id = $1 AND (e.is_archived IS FALSE OR e.is_archived IS NULL)
     `;
     const params: any[] = [userId];
@@ -184,7 +190,7 @@ export const emailRepository = {
     } else if (tab === 'low') {
       sql += ` AND e.kind = 'noise'`;
     } else if (tab === 'drafts') {
-      sql += ` AND (d.body IS NOT NULL OR (e.draft IS NOT NULL AND e.draft != ''))`;
+      sql += ` AND (EXISTS (SELECT 1 FROM email_drafts d WHERE d.email_id = e.id AND d.user_id = $1) OR (e.draft IS NOT NULL AND e.draft != ''))`;
     }
 
     sql += ` ORDER BY e.received_at DESC LIMIT 50`;

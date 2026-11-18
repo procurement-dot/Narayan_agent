@@ -13,6 +13,7 @@ import { useCalendarStore } from './calendar.store';
 import { useNavigationStore } from '../navigation/navigation.store';
 import { CalendarEvent } from './calendar.types';
 import { useToast } from '../../shared/components/Toast';
+import { lockScreenService } from './lockScreen.service';
 
 const UNIT = 86; // 86px per hour (exact match to HTML prototype)
 const START_HOUR = 5;
@@ -46,10 +47,22 @@ export const CalendarScreen: React.FC = () => {
 
   const scrollRef = useRef<ScrollView>(null);
 
-  // Fetch initial day events and month overview
+  const [isPhoneLocked, setIsPhoneLocked] = useState(false);
+
+  // Fetch initial day events and month overview & initialize Lock Screen Calendar Service
   useEffect(() => {
     fetchDayEvents();
     fetchMonthOverview();
+
+    // Start Lock Screen Calendar Service
+    lockScreenService.startLockScreenService().catch(() => {});
+    lockScreenService.isKeyguardLocked().then(setIsPhoneLocked).catch(() => {});
+
+    const lockInterval = setInterval(() => {
+      lockScreenService.isKeyguardLocked().then(setIsPhoneLocked).catch(() => {});
+    }, 4000);
+
+    return () => clearInterval(lockInterval);
   }, []);
 
   // Today string
@@ -901,6 +914,17 @@ export const CalendarScreen: React.FC = () => {
           </View>
         </View>
       </Modal>
+
+      {/* Floating Unlock Button when phone is locked */}
+      {isPhoneLocked && (
+        <TouchableOpacity
+          style={styles.floatingUnlockBar}
+          onPress={() => lockScreenService.dismissKeyguard()}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.floatingUnlockText}>🔓 Tap to Unlock Phone</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 };
@@ -909,6 +933,29 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fcfbf8',
+  },
+  floatingUnlockBar: {
+    position: 'absolute',
+    bottom: 24,
+    left: '12%',
+    right: '12%',
+    backgroundColor: '#27382d',
+    paddingVertical: 14,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 9999,
+  },
+  floatingUnlockText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   topHeader: {
     flexDirection: 'row',
