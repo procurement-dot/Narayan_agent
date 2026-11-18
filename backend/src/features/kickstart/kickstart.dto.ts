@@ -34,6 +34,16 @@ export interface TimelineItemDto {
 // 2. Weather & Air Quality
 // ==========================================
 
+export interface HourlyWeatherPointDto {
+  time: string;
+  condition: string;
+  tempC: number;
+  rainChancePct?: number;
+  humidityPct?: number;
+  aqi?: number;
+  isRadar?: boolean;
+}
+
 export interface WeatherDto {
   id: string;
   city: string;
@@ -45,6 +55,7 @@ export interface WeatherDto {
   aqi: number;
   aqiStatus: string;
   runningOutlook: string;
+  hourly?: HourlyWeatherPointDto[];
   updatedAt?: string;
 }
 
@@ -55,11 +66,14 @@ export interface WeatherDto {
 export interface NewsItemDto {
   id: string;
   orderNum: string;
-  category: 'headlines' | 'world' | 'india' | 'local' | 'interests';
+  category: string;
   title: string;
   detail: string;
   sourceName: string;
   publishedAt?: string;
+  url?: string;
+  imageUrl?: string;
+  imageCaption?: string;
 }
 
 // ==========================================
