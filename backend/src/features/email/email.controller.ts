@@ -3,7 +3,7 @@ import { emailService } from './email.service.js';
 
 export const emailController = {
   getOAuthUrl(req: Request, res: Response) {
-    const userId = (req as any).userId || '00000000-0000-0000-0000-000000000001';
+    const userId = (req.query.userId as string) || (req as any).userId || '00000000-0000-0000-0000-000000000001';
     const url = emailService.getOAuthUrl(userId);
     res.json({ url });
   },
@@ -143,8 +143,13 @@ export const emailController = {
       const result = await emailService.syncEmails(userId, maxResults);
       res.json({ message: 'Sync completed successfully.', result });
     } catch (err: any) {
-      console.error('Email sync failed:', err);
-      res.status(500).json({ error: err.message || 'Email sync failed.' });
+      const errorDetail =
+        err.response?.data?.error_description ||
+        err.response?.data?.error ||
+        err.message ||
+        'Email sync failed.';
+      console.error(`[EmailSync] Failed: ${errorDetail}`);
+      res.status(err.response?.status || 500).json({ error: errorDetail });
     }
   },
 
@@ -155,8 +160,9 @@ export const emailController = {
   },
 
   async listEmails(req: Request, res: Response) {
+    const userId = (req as any).userId || '00000000-0000-0000-0000-000000000001';
     const tab = req.query.tab as string | undefined;
-    const emails = await emailService.listEmails(tab);
+    const emails = await emailService.listEmails(userId, tab);
     res.json(emails);
   },
 

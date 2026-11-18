@@ -21,7 +21,7 @@ try {
   // Continue even if freePort fails
 }
 
-const server = app.listen(PORT, async () => {
+const server = app.listen(PORT, '0.0.0.0', async () => {
   console.log(`[NRYN Backend] Server running on http://localhost:${PORT}`);
   emailService.startBackgroundSync(15000);
   try {
@@ -31,21 +31,30 @@ const server = app.listen(PORT, async () => {
   }
 });
 
+let portRetries = 0;
+const MAX_PORT_RETRIES = 3;
+
 server.on('error', (err: any) => {
   if (err.code === 'EADDRINUSE') {
-    console.warn(`[NRYN Backend] Port ${PORT} was still busy. Re-attempting automatic port release...`);
+    if (portRetries >= MAX_PORT_RETRIES) {
+      console.error(`[NRYN Backend] Port ${PORT} is occupied by another process and could not be released.`);
+      console.error(`[NRYN Backend] Please run: npx kill-port ${PORT} and restart.`);
+      process.exit(1);
+    }
+    portRetries++;
+    console.warn(`[NRYN Backend] Port ${PORT} is busy (attempt ${portRetries}/${MAX_PORT_RETRIES}). Re-attempting release...`);
     try {
       freePort(PORT);
       setTimeout(() => {
-        server.close();
-        server.listen(PORT, async () => {
+        try { server.close(); } catch {}
+        server.listen(PORT, '0.0.0.0', async () => {
           console.log(`[NRYN Backend] Recovered and server running on http://localhost:${PORT}`);
           emailService.startBackgroundSync(15000);
           try {
             await seedAllData();
           } catch {}
         });
-      }, 600);
+      }, 700);
     } catch (killErr) {
       console.error(`[NRYN Backend] Failed to auto-release port ${PORT}:`, killErr);
     }

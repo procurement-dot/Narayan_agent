@@ -44,7 +44,7 @@ interface KickstartState {
 }
 
 export const useKickstartStore = create<KickstartState>((set, get) => ({
-  currentTab: 'today',
+  currentTab: 'weather',
   isPlaying: false,
   selectedItemId: null,
 

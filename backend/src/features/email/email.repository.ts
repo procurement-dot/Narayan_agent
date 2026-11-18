@@ -163,18 +163,19 @@ export const emailRepository = {
     return emailRow;
   },
 
-  async getEmails(tab?: string) {
+  async getEmails(userId: string, tab?: string) {
     let sql = `
       SELECT 
         e.*,
         d.body as saved_draft,
         p.id as proposal_id
       FROM emails e
-      LEFT JOIN email_drafts d ON d.email_id = e.id
-      LEFT JOIN proposals p ON p.email_id = e.id AND p.status != 'dismissed'
-      WHERE (e.is_archived IS FALSE OR e.is_archived IS NULL)
+      JOIN email_accounts a ON a.id = e.account_id
+      LEFT JOIN email_drafts d ON d.email_id = e.id AND d.user_id = $1
+      LEFT JOIN proposals p ON p.email_id = e.id AND p.status != 'dismissed' AND p.user_id = $1
+      WHERE a.user_id = $1 AND (e.is_archived IS FALSE OR e.is_archived IS NULL)
     `;
-    const params: any[] = [];
+    const params: any[] = [userId];
 
     if (tab === 'priority') {
       sql += ` AND e.kind != 'noise'`;
@@ -310,14 +311,24 @@ export const emailRepository = {
     );
   },
 
-  async getSummary() {
-    const counts = await db.queryOne(`
-      SELECT 
-        COUNT(*) FILTER (WHERE kind = 'task' AND (is_archived IS FALSE OR is_archived IS NULL)) as requests,
-        COUNT(*) FILTER (WHERE kind = 'noise' AND (is_archived IS FALSE OR is_archived IS NULL)) as low_signal,
-        COUNT(*) FILTER (WHERE kind = 'meeting' AND (is_archived IS FALSE OR is_archived IS NULL)) as merged_meetings
-      FROM emails
-    `);
+  async getAllConnectedUserIds(): Promise<string[]> {
+    const rows = await db.query(
+      `SELECT DISTINCT user_id FROM email_accounts WHERE status = 'connected' AND provider = 'gmail'`
+    );
+    return rows.map((r: any) => r.user_id);
+  },
+
+  async getSummary(userId: string) {
+    const counts = await db.queryOne(
+      `SELECT 
+        COUNT(*) FILTER (WHERE e.kind = 'task' AND (e.is_archived IS FALSE OR e.is_archived IS NULL)) as requests,
+        COUNT(*) FILTER (WHERE e.kind = 'noise' AND (e.is_archived IS FALSE OR e.is_archived IS NULL)) as low_signal,
+        COUNT(*) FILTER (WHERE e.kind = 'meeting' AND (e.is_archived IS FALSE OR e.is_archived IS NULL)) as merged_meetings
+      FROM emails e
+      JOIN email_accounts a ON a.id = e.account_id
+      WHERE a.user_id = $1`,
+      [userId]
+    );
 
     return {
       requests: Number(counts?.requests || 0),

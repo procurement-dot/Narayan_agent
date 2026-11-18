@@ -26,6 +26,16 @@ export interface CreateTimelineItemInput {
 // 2. Weather & Air Quality
 // ==========================================
 
+export interface HourlyWeatherPoint {
+  time: string;
+  condition: string;
+  tempC: number;
+  rainChancePct?: number;
+  humidityPct?: number;
+  aqi?: number;
+  isRadar?: boolean;
+}
+
 export interface WeatherInfo {
   id: string;
   city: string;
@@ -37,6 +47,7 @@ export interface WeatherInfo {
   aqi: number;
   aqiStatus: string;
   runningOutlook: string;
+  hourly?: HourlyWeatherPoint[];
   updatedAt?: string;
 }
 
@@ -44,14 +55,32 @@ export interface WeatherInfo {
 // 3. Curated News & Headlines
 // ==========================================
 
+export type NewsCategoryType =
+  | 'WORLD'
+  | 'INDIA'
+  | 'MAHARASHTRA'
+  | 'TECH & AI'
+  | 'SPORTS'
+  | 'SCIENCE'
+  | 'LEARNING'
+  | 'headlines'
+  | 'world'
+  | 'india'
+  | 'local'
+  | 'interests'
+  | (string & {});
+
 export interface NewsArticle {
   id: string;
   orderNum: string;
-  category: 'headlines' | 'world' | 'india' | 'local' | 'interests';
+  category: NewsCategoryType;
   title: string;
   detail: string;
   sourceName: string;
   publishedAt?: string;
+  url?: string;
+  imageUrl?: string;
+  imageCaption?: string;
 }
 
 // ==========================================

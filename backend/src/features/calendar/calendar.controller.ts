@@ -93,8 +93,13 @@ export const calendarController = {
       const result = await calendarService.syncGoogleCalendar(userId, dateStr);
       res.json({ message: 'Google Calendar sync completed', result });
     } catch (err: any) {
-      console.error('Failed to sync Google Calendar:', err);
-      res.status(500).json({ error: err.message || 'Failed to sync Google Calendar' });
+      const errorDetail =
+        err.response?.data?.error_description ||
+        err.response?.data?.error ||
+        err.message ||
+        'Failed to sync Google Calendar';
+      console.error(`[CalendarSync] Failed: ${errorDetail}`);
+      res.status(err.response?.status || 500).json({ error: errorDetail });
     }
   },
 };

@@ -98,5 +98,13 @@ export async function seedAllData() {
     console.warn('[SeedAll] health seed skipped:', err);
   }
 
+  // 5. Seed Finance module (Assets, Loans, Records)
+  try {
+    const { financeRepository } = await import('../features/finance/finance.repository.js');
+    await financeRepository.seedInitialIfEmpty();
+  } catch (err) {
+    console.warn('[SeedAll] finance seed skipped:', err);
+  }
+
   console.log('[SeedAll] Data initialization complete.');
 }

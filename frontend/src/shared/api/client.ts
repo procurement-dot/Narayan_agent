@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getDeviceUserId } from '../utils/deviceUser';
 
 const isLocalhost =
   typeof window !== 'undefined' &&
@@ -20,6 +21,23 @@ export const apiClient = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
+// Attach persistent device user ID to every request for tenant/device isolation
+apiClient.interceptors.request.use(
+  async (config) => {
+    try {
+      const userId = await getDeviceUserId();
+      if (userId) {
+        config.headers = config.headers || {};
+        config.headers['x-user-id'] = userId;
+      }
+    } catch (err) {
+      console.warn('[API Client] Failed to attach x-user-id header:', err);
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
 
 // Automatic retry for Render cold starts (502 / 503 / 504 / network timeout)
 apiClient.interceptors.response.use(

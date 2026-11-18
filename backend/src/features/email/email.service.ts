@@ -35,16 +35,23 @@ function formatDisplayTime(dateInput: Date | string | null): string {
 let backgroundSyncTimer: NodeJS.Timeout | null = null;
 
 export const emailService = {
-  startBackgroundSync(intervalMs = 15000) {
+  startBackgroundSync(intervalMs = 30000) {
     if (backgroundSyncTimer) return;
     backgroundSyncTimer = setInterval(async () => {
       try {
-        await this.syncEmails(DEFAULT_USER_ID, 15);
+        const userIds = await emailRepository.getAllConnectedUserIds();
+        for (const uid of userIds) {
+          try {
+            await this.syncEmails(uid, 10);
+          } catch {
+            // Silently skip if user token expired or transient network error
+          }
+        }
       } catch {
-        // Silently skip if account not connected or transient network error
+        // Silently skip if DB query error
       }
     }, intervalMs);
-    console.log('[EmailService] Background real-time auto-sync active (every 15s)');
+    console.log('[EmailService] Multi-tenant background real-time auto-sync active');
   },
 
   getOAuthUrl(userId: string = DEFAULT_USER_ID): string {
@@ -125,7 +132,7 @@ export const emailService = {
 
   async getSummary(userId: string = DEFAULT_USER_ID): Promise<EmailSummaryDto & { connected: boolean; email?: string | null }> {
     try {
-      const summary = await emailRepository.getSummary();
+      const summary = await emailRepository.getSummary(userId);
       const account = await emailRepository.getEmailAccount(userId);
       const isConnected = Boolean(account && account.refresh_token_enc);
 
@@ -138,24 +145,22 @@ export const emailService = {
         };
       }
 
-      // If not connected yet and no emails in DB, show initial demo counts for UI preview
-      if (summary.requests === 0 && summary.lowSignal === 0 && summary.mergedMeetings === 0) {
-        return { requests: 3, lowSignal: 1, mergedMeetings: 2, connected: false, email: null };
-      }
-
+      // If not connected on this device, return clean disconnected state
       return {
-        ...summary,
+        requests: 0,
+        lowSignal: 0,
+        mergedMeetings: 0,
         connected: false,
         email: null,
       };
     } catch {
-      return { requests: 3, lowSignal: 1, mergedMeetings: 2, connected: false, email: null };
+      return { requests: 0, lowSignal: 0, mergedMeetings: 0, connected: false, email: null };
     }
   },
 
-  async listEmails(tab?: string): Promise<EmailDto[]> {
+  async listEmails(userId: string = DEFAULT_USER_ID, tab?: string): Promise<EmailDto[]> {
     try {
-      const rows = await emailRepository.getEmails(tab);
+      const rows = await emailRepository.getEmails(userId, tab);
       return rows.map((r: any) => ({
         id: r.id,
         name: r.from_name || 'Unknown',

@@ -1,352 +1,416 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
-  RefreshControl,
-  ActivityIndicator,
+  Animated,
+  Easing,
+  Platform,
+  Dimensions,
 } from 'react-native';
+import Svg, { Defs, LinearGradient as SvgGradient, Stop, Rect } from 'react-native-svg';
 import { useKickstartStore } from './kickstart.store';
-import { AppHeader } from '../navigation/AppHeader';
-import { PillTabs } from '../../shared/components/PillTabs';
-import { KickstartTab } from './kickstart.types';
-import { colors, radii, spacing, typography } from '../../shared/theme/tokens';
-import { useToast } from '../../shared/components/Toast';
-import { AddTimelineSheet } from './components/AddTimelineSheet';
+import { KickstartTab, HourlyWeatherPoint, NewsArticle, WeatherInfo } from './kickstart.types';
+import { InAppWeatherSheet } from './components/InAppWeatherSheet';
+import { InAppNewsSheet } from './components/InAppNewsSheet';
+import { InAppHoroscopeSheet } from './components/InAppHoroscopeSheet';
 
 const TABS: { id: KickstartTab; label: string }[] = [
-  { id: 'today', label: 'All' },
-  { id: 'weather', label: 'Weather ☀️' },
-  { id: 'news', label: 'News 📰' },
-  { id: 'astro', label: 'Astrology 🌙' },
+  { id: 'today', label: '◷  All' },
+  { id: 'weather', label: '☼  Weather' },
+  { id: 'news', label: '✳  News' },
+  { id: 'astro', label: '☾  Horoscope' },
 ];
+
+interface SelectedWeatherItem {
+  type: 'weather' | 'news';
+  weatherPoint?: HourlyWeatherPoint;
+  weatherOverall?: WeatherInfo;
+  newsArticle?: NewsArticle;
+}
+
+interface TickerItemDisplay {
+  id: string;
+  tag: string;
+  headline: string;
+  isPrimary?: boolean;
+  rawType: 'weather' | 'news' | 'astro';
+  weatherPoint?: HourlyWeatherPoint;
+  newsArticle?: NewsArticle;
+}
+
+const SCREEN_HEIGHT = Dimensions.get('window').height;
 
 export const KickstartScreen: React.FC = () => {
   const {
     currentTab,
     setTab,
-    isPlaying,
-    togglePlay,
-    audioBrief,
-    timeline,
     weather,
     news,
     astro,
-    isLoading,
+    timeline,
     fetchKickstartData,
-    toggleTimelineItem,
-    setAddTimelineOpen,
   } = useKickstartStore();
 
-  const { showToast } = useToast();
-  const [refreshing, setRefreshing] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [selectedWeatherItem, setSelectedWeatherItem] = useState<SelectedWeatherItem | null>(null);
+  const [selectedNewsArticle, setSelectedNewsArticle] = useState<NewsArticle | null>(null);
+  const [isHoroscopeSheetVisible, setIsHoroscopeSheetVisible] = useState(false);
+
+  // Animated vertical translateY for continuous teleprompter roll
+  const scrollAnim = useRef(new Animated.Value(0)).current;
+  const animRunningRef = useRef<Animated.CompositeAnimation | null>(null);
+  const currentOffsetRef = useRef(0);
+  const totalContentHeightRef = useRef(1200);
 
   useEffect(() => {
     fetchKickstartData();
-    return () => {
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
-    };
   }, [fetchKickstartData]);
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await fetchKickstartData();
-    setRefreshing(false);
+  // Build the list of ticker items based on active tab
+  const getTickerItems = (): TickerItemDisplay[] => {
+    if (currentTab === 'weather') {
+      const hourly =
+        weather?.hourly && weather.hourly.length > 0
+          ? weather.hourly
+          : [
+              { time: 'IR', condition: 'View official IMD satellite', tempC: 24, isRadar: true },
+              { time: '06', condition: '24°C · partly cloudy (sample)', tempC: 24, rainChancePct: 10, humidityPct: 56, aqi: 52 },
+              { time: '09', condition: 'Low wind · illustrative', tempC: 25, rainChancePct: 10, humidityPct: 48, aqi: 64 },
+              { time: '12', condition: 'Afternoon 29°C · illustrative', tempC: 29, rainChancePct: 15, humidityPct: 42, aqi: 72 },
+              { time: '15', condition: 'Rain chance 20% · illustrative', tempC: 28, rainChancePct: 20, humidityPct: 62, aqi: 60 },
+              { time: '18', condition: 'Sunset 18:15 · illustrative', tempC: 26, rainChancePct: 10, humidityPct: 54, aqi: 58 },
+              { time: '20', condition: 'No live severe-weather feed', tempC: 23, rainChancePct: 5, humidityPct: 58, aqi: 50 },
+            ];
+      return hourly.map((h, i) => ({
+        id: `w_${i}_${h.time}`,
+        tag: h.time,
+        headline: h.condition,
+        isPrimary: i === 0 || i === 1 || i === 4,
+        rawType: 'weather',
+        weatherPoint: h,
+      }));
+    }
+
+    if (currentTab === 'news') {
+      const genericWords = [
+        'headlines',
+        'world',
+        'india',
+        'pune',
+        'pune local',
+        'local',
+        'interests',
+        'your interests',
+      ];
+
+      return (news || []).map((n, i) => {
+        const titleLower = (n.title || '').trim().toLowerCase();
+        const isGeneric = !n.title || genericWords.includes(titleLower);
+        const headlineText = isGeneric && n.detail ? n.detail : n.title;
+        const categoryTag = (n.category || 'NEWS').toUpperCase();
+
+        return {
+          id: n.id,
+          tag: categoryTag,
+          headline: headlineText,
+          isPrimary: i % 2 === 1,
+          rawType: 'news',
+          newsArticle: {
+            ...n,
+            title: headlineText,
+          },
+        };
+      });
+    }
+
+    if (currentTab === 'astro') {
+      const astroList = [
+        { tag: 'TODAY', headline: 'Aries Sun · Sagittarius Moon (illustrative)', isPrimary: true },
+        { tag: 'FOCUS', headline: 'Notice a reaction before answering', isPrimary: false },
+        { tag: 'MONTH', headline: 'A reflection on freedom and responsibility', isPrimary: true },
+        { tag: 'SYMBOLS', headline: 'Astrology is a cultural reflection', isPrimary: false },
+        { tag: 'SOURCE', headline: 'Sakal / Pune Times — not connected', isPrimary: false },
+        { tag: 'VIEW', headline: 'Explore your birth chart & AI analysis', isPrimary: true },
+      ];
+
+      return astroList.map((a, i) => ({
+        id: `astro_${i}_${a.tag}`,
+        tag: a.tag,
+        headline: a.headline,
+        isPrimary: a.isPrimary,
+        rawType: 'astro' as const,
+      }));
+    }
+
+    // Tab 'today' / 'All'
+    return (timeline || []).map((t, i) => ({
+      id: t.id,
+      tag: t.timeSlot,
+      headline: t.title,
+      isPrimary: t.isEmphasized || i % 2 === 1,
+      rawType: 'weather',
+      weatherPoint: {
+        time: t.timeSlot,
+        condition: t.title + (t.detail ? ` · ${t.detail}` : ''),
+        tempC: 24,
+      },
+    }));
   };
 
-  const handleToggleTimeline = async (id: string, title: string, currentlyDone?: boolean) => {
-    await toggleTimelineItem(id);
-    if (!currentlyDone) {
-      showToast(`Completed: "${title}" ✓`, 'success');
-    } else {
-      showToast(`Marked pending: "${title}"`, 'info');
+  const rawItems = getTickerItems();
+  // Duplicate array so it rolls in an infinite seamless loop
+  const displayItems = [...rawItems, ...rawItems];
+
+  // Start continuous upward roll animation
+  const startRollAnimation = (startFromOffset = 0) => {
+    if (animRunningRef.current) {
+      animRunningRef.current.stop();
+    }
+
+    const distance = totalContentHeightRef.current;
+    if (distance <= 0) return;
+
+    // ~36 seconds for one full loop
+    const remainingDistance = distance - Math.abs(startFromOffset);
+    const duration = Math.max(8000, (remainingDistance / distance) * 36000);
+
+    animRunningRef.current = Animated.timing(scrollAnim, {
+      toValue: -distance,
+      duration: duration,
+      easing: Easing.linear,
+      useNativeDriver: Platform.OS !== 'web',
+    });
+
+    animRunningRef.current.start(({ finished }) => {
+      if (finished) {
+        scrollAnim.setValue(0);
+        currentOffsetRef.current = 0;
+        startRollAnimation(0);
+      }
+    });
+  };
+
+  // Pause the roll
+  const pauseRoll = () => {
+    setIsPaused(true);
+    if (animRunningRef.current) {
+      animRunningRef.current.stop();
     }
   };
 
-  const handleToggleAudio = () => {
-    if (isPlaying) {
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
-      togglePlay();
-      showToast('Audio briefing paused', 'info');
+  // Resume or start
+  const resumeRoll = () => {
+    setIsPaused(false);
+    startRollAnimation(currentOffsetRef.current);
+  };
+
+  // Restart from top
+  const restartRoll = () => {
+    setIsPaused(false);
+    scrollAnim.setValue(0);
+    currentOffsetRef.current = 0;
+    startRollAnimation(0);
+  };
+
+  // Track animated offset listener for accurate resume
+  useEffect(() => {
+    const listenerId = scrollAnim.addListener(({ value }) => {
+      currentOffsetRef.current = value;
+    });
+    return () => {
+      scrollAnim.removeListener(listenerId);
+    };
+  }, [scrollAnim]);
+
+  // Restart roll whenever the tab changes
+  useEffect(() => {
+    scrollAnim.setValue(0);
+    currentOffsetRef.current = 0;
+    setIsPaused(false);
+    const timer = setTimeout(() => {
+      startRollAnimation(0);
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [currentTab]);
+
+  const handleItemPress = (item: TickerItemDisplay) => {
+    pauseRoll();
+    if (item.rawType === 'astro') {
+      setIsHoroscopeSheetVisible(true);
+    } else if (item.rawType === 'news' && item.newsArticle) {
+      setSelectedNewsArticle(item.newsArticle);
     } else {
-      togglePlay();
-      showToast('Playing 3-minute morning briefing 🎧', 'info');
-
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-        const priorityItem = timeline.find((t) => t.isEmphasized && !t.isCompleted) || timeline[0];
-        const topNews = news[0]?.title || 'Tech and economy momentum continues';
-
-        const script = `Good morning. Here is your 3-minute executive synthesis. In Pune, weather is ${weather?.tempC ?? 24} degrees celsius with ${weather?.condition?.toLowerCase() ?? 'clear skies'}. Air quality is index ${weather?.aqi ?? 68}, moderate and suitable for your morning run. In your daily agenda, your priority focus is ${priorityItem?.title ?? 'Your day in motion'} scheduled for ${priorityItem?.timeSlot ?? '8:30 AM'}. In top headlines, ${topNews}. Today's mindset focus: execute with calm clarity and unhurried momentum. Have an intentional day.`;
-
-        const utterance = new SpeechSynthesisUtterance(script);
-        utterance.rate = 0.95;
-        utterance.pitch = 1.0;
-
-        const voices = window.speechSynthesis.getVoices();
-        const preferredVoice = voices.find(
-          (v) => (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha') || v.lang.startsWith('en'))
-        );
-        if (preferredVoice) {
-          utterance.voice = preferredVoice;
-        }
-
-        utterance.onend = () => {
-          useKickstartStore.setState({ isPlaying: false });
-        };
-        utterance.onerror = () => {
-          useKickstartStore.setState({ isPlaying: false });
-        };
-
-        window.speechSynthesis.speak(utterance);
-      }
+      setSelectedWeatherItem({
+        type: item.rawType,
+        weatherPoint: item.weatherPoint,
+        weatherOverall: weather || undefined,
+        newsArticle: item.newsArticle,
+      });
     }
   };
 
   return (
     <View style={styles.container}>
-      <AppHeader
-        kicker="MORNING BRIEFING · DAILY INTENT"
-        title="Start with clarity."
-        subtitle="Curated signal across your day, weather and interests."
-      />
-
-      {/* Audio Briefing Executive Player */}
-      {audioBrief && (
-        <View style={styles.briefCard}>
-          <View style={styles.briefInfo}>
-            <Text style={styles.briefKicker}>NRYN AUDIO BRIEF</Text>
-            <Text style={styles.briefTitle}>{audioBrief.title}</Text>
-            <Text style={styles.briefDesc}>{audioBrief.summary}</Text>
-          </View>
-          <TouchableOpacity
-            style={[styles.playBtn, isPlaying && styles.playBtnActive]}
-            onPress={handleToggleAudio}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.playIcon}>{isPlaying ? '❚❚' : '▶'}</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Navigation Tabs */}
-      <View style={styles.tabsContainer}>
-        <PillTabs
-          tabs={TABS}
-          activeTab={currentTab}
-          onSelect={(tab) => setTab(tab as KickstartTab)}
-        />
+      {/* 1. Header Bar: Minimal Authentic Navigation */}
+      <View style={styles.headerBar}>
+        <Text style={styles.headerTitle}>‹   Kickstart</Text>
       </View>
 
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.ink}
-          />
-        }
+      {/* 2. Top Pill Filter Tabs */}
+      <View style={styles.pillsRow}>
+        {TABS.map((tab) => {
+          const isActive = currentTab === tab.id;
+          return (
+            <TouchableOpacity
+              key={tab.id}
+              style={[styles.pill, isActive && styles.pillActive]}
+              onPress={() => setTab(tab.id)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.pillText, isActive && styles.pillTextActive]}>
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {/* 3. The Continuous Rolling Teleprompter Viewport */}
+      <View
+        style={styles.scrollbox}
+        onTouchStart={pauseRoll}
+        onTouchEnd={() => {
+          if (!isPaused) resumeRoll();
+        }}
       >
-        {/* ========================================== */}
-        {/* 1. ALL / TODAY TAB (Timeline & Agenda)    */}
-        {/* ========================================== */}
-        {currentTab === 'today' && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Today's Agenda & Flow</Text>
+        <Animated.View
+          style={[
+            styles.scrolltrack,
+            {
+              transform: [{ translateY: scrollAnim }],
+            },
+          ]}
+          onLayout={(e) => {
+            const h = e.nativeEvent.layout.height;
+            if (h > 0) {
+              totalContentHeightRef.current = h / 2;
+            }
+          }}
+        >
+          {displayItems.map((item, idx) => {
+            const isHighlight = item.isPrimary;
+            return (
               <TouchableOpacity
-                style={styles.addBtn}
-                onPress={() => setAddTimelineOpen(true)}
+                key={`${item.id}_${idx}`}
+                style={styles.tickerRow}
+                onPress={() => handleItemPress(item)}
+                activeOpacity={0.65}
               >
-                <Text style={styles.addBtnText}>+ Add Task</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.list}>
-              {timeline.map((item) => (
-                <TouchableOpacity
-                  key={item.id}
+                <Text style={styles.tickerTag}>{item.tag}</Text>
+                <Text
                   style={[
-                    styles.itemCard,
-                    item.isEmphasized && styles.itemCardEmph,
-                    item.isCompleted && styles.itemCardDone,
+                    styles.tickerHeadline,
+                    isHighlight && styles.tickerHeadlineEmph,
                   ]}
-                  onPress={() =>
-                    handleToggleTimeline(item.id, item.title, item.isCompleted)
-                  }
-                  activeOpacity={0.7}
+                  numberOfLines={3}
                 >
-                  <View style={styles.checkCol}>
-                    <Text
-                      style={
-                        item.isCompleted
-                          ? styles.checkDone
-                          : styles.checkPending
-                      }
-                    >
-                      {item.isCompleted ? '✓' : '○'}
-                    </Text>
-                  </View>
+                  {item.headline}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </Animated.View>
 
-                  <Text
-                    style={[
-                      styles.itemNum,
-                      item.isCompleted && styles.itemTextStrikethrough,
-                    ]}
-                  >
-                    {item.timeSlot}
-                  </Text>
+        {/* Top Fade Gradient Mask */}
+        <View style={styles.maskTop} pointerEvents="none">
+          <Svg height="100%" width="100%">
+            <Defs>
+              <SvgGradient id="topFade" x1="0" y1="0" x2="0" y2="1">
+                <Stop offset="0%" stopColor="#f9faf5" stopOpacity="1" />
+                <Stop offset="40%" stopColor="#f9faf5" stopOpacity="0.8" />
+                <Stop offset="100%" stopColor="#f9faf5" stopOpacity="0" />
+              </SvgGradient>
+            </Defs>
+            <Rect x="0" y="0" width="100%" height="100%" fill="url(#topFade)" />
+          </Svg>
+        </View>
 
-                  <View style={styles.itemBody}>
-                    <Text
-                      style={[
-                        styles.itemTitle,
-                        item.isCompleted && styles.itemTextStrikethrough,
-                      ]}
-                    >
-                      {item.title}
-                    </Text>
-                    {item.detail ? (
-                      <Text style={styles.itemDetail}>{item.detail}</Text>
-                    ) : null}
-                  </View>
+        {/* Bottom Fade Gradient Mask */}
+        <View style={styles.maskBottom} pointerEvents="none">
+          <Svg height="100%" width="100%">
+            <Defs>
+              <SvgGradient id="bottomFade" x1="0" y1="0" x2="0" y2="1">
+                <Stop offset="0%" stopColor="#f9faf5" stopOpacity="0" />
+                <Stop offset="60%" stopColor="#f9faf5" stopOpacity="0.8" />
+                <Stop offset="100%" stopColor="#f9faf5" stopOpacity="1" />
+              </SvgGradient>
+            </Defs>
+            <Rect x="0" y="0" width="100%" height="100%" fill="url(#bottomFade)" />
+          </Svg>
+        </View>
 
-                  {item.isEmphasized && !item.isCompleted && (
-                    <View style={styles.priorityPill}>
-                      <Text style={styles.priorityPillText}>★ Priority</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        )}
+        {/* 4. Floating Action Controls (Pause / Play & Restart) */}
+        <View style={styles.feedTools}>
+          <TouchableOpacity
+            style={styles.toolBtn}
+            onPress={isPaused ? resumeRoll : pauseRoll}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.toolBtnText}>
+              {isPaused ? '▶ Play' : 'Ⅱ Pause'}
+            </Text>
+          </TouchableOpacity>
 
-        {/* ========================================== */}
-        {/* 2. WEATHER TAB (Pune Weather & AQI)       */}
-        {/* ========================================== */}
-        {currentTab === 'weather' && weather && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Weather & Environment</Text>
-            </View>
+          <TouchableOpacity
+            style={styles.toolBtn}
+            onPress={restartRoll}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.toolBtnText}>↺ Restart</Text>
+          </TouchableOpacity>
+        </View>
 
-            {/* Main Weather Card */}
-            <View style={styles.weatherHeroCard}>
-              <View style={styles.weatherTopRow}>
-                <View>
-                  <Text style={styles.weatherCity}>{weather.city}</Text>
-                  <Text style={styles.weatherCond}>{weather.condition}</Text>
-                </View>
-                <Text style={styles.weatherTempBig}>{weather.tempC}°C</Text>
-              </View>
+        {/* Floating Action Button (Asterisk) */}
+        <TouchableOpacity
+          style={styles.fabBtn}
+          activeOpacity={0.8}
+          accessibilityLabel="Assistant quick action"
+        >
+          <Text style={styles.fabIcon}>✳</Text>
+        </TouchableOpacity>
+      </View>
 
-              <View style={styles.weatherStatsRow}>
-                <View style={styles.weatherStatItem}>
-                  <Text style={styles.weatherStatLabel}>HIGH / LOW</Text>
-                  <Text style={styles.weatherStatVal}>
-                    {weather.highTempC}° / {weather.lowTempC}°
-                  </Text>
-                </View>
-                <View style={styles.weatherStatItem}>
-                  <Text style={styles.weatherStatLabel}>HUMIDITY</Text>
-                  <Text style={styles.weatherStatVal}>{weather.humidityPct}%</Text>
-                </View>
-                <View style={styles.weatherStatItem}>
-                  <Text style={styles.weatherStatLabel}>AIR QUALITY</Text>
-                  <Text style={[styles.weatherStatVal, { color: '#3b7a57' }]}>
-                    AQI {weather.aqi}
-                  </Text>
-                </View>
-              </View>
-            </View>
+      {/* 5. Dedicated In-App Weather Intelligence Sheet (Opened on Weather Tap) */}
+      <InAppWeatherSheet
+        visible={Boolean(selectedWeatherItem)}
+        weatherPoint={selectedWeatherItem?.weatherPoint}
+        weatherOverall={selectedWeatherItem?.weatherOverall}
+        onClose={() => {
+          setSelectedWeatherItem(null);
+          resumeRoll();
+        }}
+      />
 
-            {/* Running & Training Outlook */}
-            <View style={styles.cardWarm}>
-              <Text style={styles.briefKicker}>OUTDOOR & RUNNING OUTLOOK</Text>
-              <Text style={styles.cardTitle}>Morning Athletic Signal</Text>
-              <Text style={styles.cardDesc}>{weather.runningOutlook}</Text>
-            </View>
-          </View>
-        )}
+      {/* 6. Option 1: In-App Google News Sheet (Opened on News Tap) */}
+      <InAppNewsSheet
+        visible={Boolean(selectedNewsArticle)}
+        article={selectedNewsArticle}
+        onClose={() => {
+          setSelectedNewsArticle(null);
+          resumeRoll();
+        }}
+      />
 
-        {/* ========================================== */}
-        {/* 3. NEWS TAB (Curated Morning Signals)     */}
-        {/* ========================================== */}
-        {currentTab === 'news' && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Curated Morning Signals</Text>
-            </View>
-
-            <View style={styles.list}>
-              {news.map((item) => (
-                <View key={item.id} style={styles.itemCard}>
-                  <Text style={styles.itemNum}>{item.orderNum}</Text>
-                  <View style={styles.itemBody}>
-                    <View style={styles.newsMetaRow}>
-                      <View style={styles.catBadge}>
-                        <Text style={styles.catBadgeText}>
-                          {item.category.toUpperCase()}
-                        </Text>
-                      </View>
-                      <Text style={styles.sourceText}>{item.sourceName}</Text>
-                    </View>
-                    <Text style={styles.itemTitle}>{item.title}</Text>
-                    {item.detail ? (
-                      <Text style={styles.itemDetail}>{item.detail}</Text>
-                    ) : null}
-                  </View>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {/* ========================================== */}
-        {/* 4. ASTRO TAB (Astrology & Mindset)        */}
-        {/* ========================================== */}
-        {currentTab === 'astro' && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Astrology & Mindset Intent</Text>
-            </View>
-
-            <View style={styles.list}>
-              {astro.map((item) => (
-                <View key={item.id} style={styles.cardWarm}>
-                  <View style={styles.astroHeader}>
-                    <Text style={styles.briefKicker}>
-                      {item.orderNum} · {item.moonPhase.toUpperCase()}
-                    </Text>
-                    <Text style={styles.astroDate}>{item.date}</Text>
-                  </View>
-                  <Text style={styles.cardTitle}>{item.title}</Text>
-                  <Text style={styles.cardDesc}>{item.detail}</Text>
-
-                  <View style={styles.astroFooter}>
-                    <Text style={styles.astroFocusText}>
-                      Focus: {item.todayFocus}
-                    </Text>
-                  </View>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-      </ScrollView>
-
-      {/* Interactive Modal Sheet for Adding Agenda Tasks */}
-      <AddTimelineSheet />
+      {/* 7. Dedicated In-App Horoscope & Astro Intelligence Sheet */}
+      <InAppHoroscopeSheet
+        visible={isHoroscopeSheetVisible}
+        onClose={() => {
+          setIsHoroscopeSheetVisible(false);
+          resumeRoll();
+        }}
+      />
     </View>
   );
 };
@@ -354,273 +418,143 @@ export const KickstartScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: '#f9faf5', // Authentic calm off-white / sage tint
   },
-  briefCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.surfaceWarm,
-    marginHorizontal: spacing.md,
-    padding: spacing.md,
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-    marginBottom: spacing.sm,
+  headerBar: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 10,
+    backgroundColor: '#f9faf5',
   },
-  briefInfo: {
-    flex: 1,
-  },
-  briefKicker: {
-    fontSize: 10,
-    fontFamily: typography.fontFamily.uiMedium,
-    color: colors.muted,
-    letterSpacing: 1.2,
-  },
-  briefTitle: {
-    fontSize: 15,
-    fontFamily: typography.fontFamily.serifRegular,
-    color: colors.ink,
-    marginTop: 2,
-  },
-  briefDesc: {
-    fontSize: 12,
-    color: colors.muted,
-    marginTop: 2,
-  },
-  playBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.ink,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: spacing.sm,
-  },
-  playBtnActive: {
-    backgroundColor: '#3b7a57',
-  },
-  playIcon: {
-    color: '#ffffff',
-    fontSize: 16,
-    marginLeft: 2,
-  },
-  tabsContainer: {
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.xxl,
-  },
-  section: {
-    gap: spacing.sm,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginVertical: spacing.xs,
-  },
-  sectionTitle: {
-    fontSize: 15,
-    fontFamily: typography.fontFamily.uiMedium,
-    color: colors.ink,
-  },
-  addBtn: {
-    backgroundColor: colors.surfaceWarm,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: radii.pill,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-  },
-  addBtnText: {
-    fontSize: 12,
-    fontFamily: typography.fontFamily.uiMedium,
-    color: colors.ink,
-  },
-  list: {
-    gap: spacing.sm,
-  },
-  itemCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    padding: spacing.md,
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-  },
-  itemCardEmph: {
-    backgroundColor: '#f5f2e8',
-    borderColor: '#e2dbc8',
-  },
-  itemCardDone: {
-    opacity: 0.65,
-  },
-  checkCol: {
-    width: 26,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 6,
-  },
-  checkDone: {
-    fontSize: 16,
-    color: '#3b7a57',
+  headerTitle: {
+    fontSize: 22,
     fontWeight: '700',
+    color: '#313c35',
+    letterSpacing: -0.4,
   },
-  checkPending: {
-    fontSize: 16,
-    color: colors.muted,
-  },
-  itemNum: {
-    fontSize: 13,
-    fontFamily: typography.fontFamily.uiMedium,
-    color: colors.inkSecondary,
-    width: 48,
-  },
-  itemTextStrikethrough: {
-    textDecorationLine: 'line-through',
-  },
-  itemBody: {
-    flex: 1,
-    marginLeft: 4,
-  },
-  itemTitle: {
-    fontSize: 14,
-    fontFamily: typography.fontFamily.uiMedium,
-    color: colors.ink,
-  },
-  itemDetail: {
-    fontSize: 12,
-    color: colors.muted,
-    marginTop: 2,
-  },
-  priorityPill: {
-    backgroundColor: '#e2dbc8',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: radii.pill,
-    marginLeft: 6,
-  },
-  priorityPillText: {
-    fontSize: 10,
-    fontFamily: typography.fontFamily.uiMedium,
-    color: colors.ink,
-  },
-  cardWarm: {
-    backgroundColor: colors.surfaceWarm,
-    padding: spacing.md,
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-  },
-  cardTitle: {
-    fontSize: 15,
-    fontFamily: typography.fontFamily.uiMedium,
-    color: colors.ink,
-    marginTop: 4,
-  },
-  cardDesc: {
-    fontSize: 13,
-    color: colors.inkSecondary,
-    lineHeight: 18,
-    marginTop: 4,
-  },
-  weatherHeroCard: {
-    backgroundColor: colors.surface,
-    padding: spacing.md,
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-  },
-  weatherTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.md,
-  },
-  weatherCity: {
-    fontSize: 18,
-    fontFamily: typography.fontFamily.uiMedium,
-    color: colors.ink,
-  },
-  weatherCond: {
-    fontSize: 13,
-    color: colors.muted,
-    marginTop: 2,
-  },
-  weatherTempBig: {
-    fontSize: 32,
-    fontFamily: typography.fontFamily.uiMedium,
-    color: colors.ink,
-  },
-  weatherStatsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingTop: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: colors.borderLight,
-  },
-  weatherStatItem: {
-    alignItems: 'center',
-  },
-  weatherStatLabel: {
-    fontSize: 10,
-    fontFamily: typography.fontFamily.uiMedium,
-    color: colors.muted,
-    letterSpacing: 0.8,
-  },
-  weatherStatVal: {
-    fontSize: 13,
-    fontFamily: typography.fontFamily.uiMedium,
-    color: colors.ink,
-    marginTop: 2,
-  },
-  newsMetaRow: {
+  pillsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 4,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: '#f9faf5',
   },
-  catBadge: {
-    backgroundColor: colors.surfaceWarm,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: radii.sm,
+  pill: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 99,
+    borderWidth: 1,
+    borderColor: '#e2e6df',
+    backgroundColor: 'rgba(255, 255, 255, 0.65)',
   },
-  catBadgeText: {
-    fontSize: 9,
-    fontFamily: typography.fontFamily.uiMedium,
-    color: colors.inkSecondary,
-    letterSpacing: 0.5,
+  pillActive: {
+    backgroundColor: '#e3ede4',
+    borderColor: '#7d9786',
   },
-  sourceText: {
-    fontSize: 11,
-    color: colors.muted,
-  },
-  astroHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  astroDate: {
-    fontSize: 11,
-    color: colors.muted,
-  },
-  astroFooter: {
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: colors.borderLight,
-  },
-  astroFocusText: {
+  pillText: {
     fontSize: 12,
-    fontFamily: typography.fontFamily.uiMedium,
-    color: colors.accent,
+    fontWeight: '500',
+    color: '#5e6d64',
+  },
+  pillTextActive: {
+    color: '#30443a',
+    fontWeight: '700',
+  },
+  scrollbox: {
+    flex: 1,
+    overflow: 'hidden',
+    position: 'relative',
+    backgroundColor: '#f9faf5',
+  },
+  scrolltrack: {
+    paddingTop: SCREEN_HEIGHT * 0.15,
+    paddingBottom: SCREEN_HEIGHT * 0.45,
+    paddingHorizontal: 24,
+  },
+  tickerRow: {
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#edf0e9',
+  },
+  tickerTag: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#9da9a0',
+    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  tickerHeadline: {
+    fontSize: 28,
+    fontWeight: '700',
+    lineHeight: 34,
+    letterSpacing: -1.2,
+    color: '#c6cac2', // Faded subtle items by default
+  },
+  tickerHeadlineEmph: {
+    color: '#313c35', // Prominent dark text for active/highlight items
+  },
+  maskTop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 70,
+  },
+  maskBottom: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 90,
+  },
+  feedTools: {
+    position: 'absolute',
+    bottom: 14,
+    right: 18,
+    zIndex: 10,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  toolBtn: {
+    backgroundColor: 'rgba(241, 245, 238, 0.95)',
+    borderWidth: 1,
+    borderColor: '#dde7dd',
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    borderRadius: 30,
+    shadowColor: '#263b30',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  toolBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#53675a',
+  },
+  fabBtn: {
+    position: 'absolute',
+    bottom: 68,
+    right: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#354d3f',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#1d2e24',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.22,
+    shadowRadius: 6,
+    elevation: 5,
+    zIndex: 11,
+  },
+  fabIcon: {
+    color: '#ffffff',
+    fontSize: 20,
+    fontWeight: '700',
   },
 });
