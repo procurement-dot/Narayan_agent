@@ -1,5 +1,5 @@
 import React, { useMemo, useEffect } from 'react';
-import { ScrollView, Text, View, Platform, AppState, Linking, DeviceEventEmitter, NativeModules } from 'react-native';
+import { ScrollView, Text, View, Platform, AppState, Linking, DeviceEventEmitter, NativeModules, TouchableOpacity } from 'react-native';
 import { Card } from '../../../shared/components/Card';
 import { useToast } from '../../../shared/components/Toast';
 import { useNavigationStore } from '../../navigation/navigation.store';
