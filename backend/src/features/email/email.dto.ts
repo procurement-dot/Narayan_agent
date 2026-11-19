@@ -12,6 +12,7 @@ export interface EmailDto {
   confidence: 'High' | 'Medium' | 'Low';
   status?: string;
   proposalId?: string;
+  accountEmail?: string;
 }
 
 export interface ProposalDto {

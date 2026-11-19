@@ -1,5 +1,5 @@
 import React, { useMemo, useEffect } from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import { ScrollView, Text, View, Platform, AppState, Linking, DeviceEventEmitter, NativeModules, TouchableOpacity } from 'react-native';
 import { Card } from '../../../shared/components/Card';
 import { useToast } from '../../../shared/components/Toast';
 import { useNavigationStore } from '../../navigation/navigation.store';
@@ -45,6 +45,8 @@ export const EmailScreen: React.FC = () => {
     sendReply,
     syncEmails,
     isConnected,
+    selectedAccountEmail,
+    setSelectedAccountEmail,
   } = useEmailUiStore();
 
   // Load initial data and run real-time auto-sync
@@ -67,27 +69,83 @@ export const EmailScreen: React.FC = () => {
         .catch(() => {});
     }, 10000);
 
-    // Auto-sync when user returns/focuses on the browser tab
+    // Refresh when app comes back to foreground (e.g. after OAuth redirect on mobile)
+    const appStateSub = AppState.addEventListener('change', async (nextState) => {
+      if (nextState === 'active') {
+        checkOAuthStatus();
+        fetchSummary();
+        fetchEmails();
+        syncEmails({ silent: true }).catch(() => {});
+
+        // Auto-detect OAuth link if user copied it from Chrome address bar
+        if (Platform.OS === 'android' && NativeModules.OAuthServer?.getClipboardText && !isConnected) {
+          try {
+            const clip: string = await NativeModules.OAuthServer.getClipboardText();
+            if (clip && (clip.includes('code=') || clip.includes('/api/email/oauth/callback'))) {
+              showToast('OAuth link detected from clipboard! Connecting...', 'info');
+              await useEmailUiStore.getState().connectWithCode(clip);
+              showToast('Gmail connected successfully!', 'success');
+            }
+          } catch {}
+        }
+      }
+    });
+
+    // Handle in-app OAuth server event
+    const oAuthSub = DeviceEventEmitter.addListener('onOAuthCodeReceived', async (event: any) => {
+      showToast('Gmail authorization received! Connecting...', 'info');
+      try {
+        if (event && event.code) {
+          await useEmailUiStore.getState().connectWithCode(event.code);
+        }
+      } catch {}
+      setTimeout(async () => {
+        await checkOAuthStatus();
+        await fetchSummary();
+        await fetchEmails();
+        await syncEmails({ silent: false }).catch(() => {});
+      }, 800);
+    });
+
+    // Handle deep-link return from Google OAuth
+    const linkingSub = Linking.addEventListener('url', (event) => {
+      if (event.url.includes('email') || event.url.includes('connected')) {
+        checkOAuthStatus();
+        fetchSummary();
+        fetchEmails();
+        syncEmails({ silent: true }).catch(() => {});
+      }
+    });
+
+    // Auto-sync when user returns/focuses on the browser tab (web)
     const handleFocus = () => {
       syncEmails({ silent: true }).catch(() => {});
     };
 
-    if (typeof window !== 'undefined' && window.addEventListener) {
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.addEventListener) {
       window.addEventListener('focus', handleFocus);
     }
 
     return () => {
       clearInterval(pollTimer);
-      if (typeof window !== 'undefined' && window.removeEventListener) {
+      appStateSub.remove();
+      linkingSub.remove();
+      oAuthSub.remove();
+      if (Platform.OS === 'web' && typeof window !== 'undefined' && window.removeEventListener) {
         window.removeEventListener('focus', handleFocus);
       }
     };
   }, []);
 
-  // Filter emails based on the active tab
+  // Filter emails based on the active tab and selected account
   const displayedEmails = useMemo(() => {
-    return filterByTab(emails, mailTab, mailDrafts);
-  }, [emails, mailTab, mailDrafts]);
+    let list = filterByTab(emails, mailTab, mailDrafts);
+    if (selectedAccountEmail && selectedAccountEmail !== 'all') {
+      const target = selectedAccountEmail.toLowerCase();
+      list = list.filter((e) => !e.accountEmail || e.accountEmail.toLowerCase() === target);
+    }
+    return list;
+  }, [emails, mailTab, mailDrafts, selectedAccountEmail]);
 
   // Active email for detail sheet
   const activeEmail = useMemo(() => {
@@ -196,6 +254,7 @@ export const EmailScreen: React.FC = () => {
       <ScrollView
         contentContainerStyle={emailStyles.scrollContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         {/* Header */}
         <EmailHeader onBack={goBack} />
@@ -213,12 +272,37 @@ export const EmailScreen: React.FC = () => {
         {/* Tabs */}
         <EmailTabs activeTab={mailTab} onSelectTab={setMailTab} />
 
+        {/* Active Account Filter Chip */}
+        {selectedAccountEmail !== 'all' && (
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              backgroundColor: '#edf5ef',
+              paddingHorizontal: 12,
+              paddingVertical: 7,
+              borderRadius: 10,
+              marginBottom: 10,
+              borderWidth: 1,
+              borderColor: '#cce2d1',
+            }}
+          >
+            <Text style={{ fontSize: 12, color: '#274f31' }}>
+              Filtered by: <Text style={{ fontWeight: '700' }}>{selectedAccountEmail}</Text>
+            </Text>
+            <TouchableOpacity onPress={() => setSelectedAccountEmail('all')}>
+              <Text style={{ fontSize: 11, color: '#7a3f3f', fontWeight: '600' }}>Show all inboxes ✕</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Email Rows List Card */}
         <Card>
           {displayedEmails.length > 0 ? (
             displayedEmails.map((email, index) => (
               <EmailRow
-                key={email.id}
+                key={`${email.id}-${index}`}
                 email={email}
                 statusOverride={mailStatus[email.id]}
                 isLast={index === displayedEmails.length - 1}

@@ -26,3 +26,7 @@ travelRouter.post('/documents', travelController.createDocument);
 // 5. IRCTC Tatkal Assistant
 travelRouter.get('/tatkal', travelController.listTatkal);
 travelRouter.post('/tatkal', travelController.createTatkal);
+
+// 6. AI Multi-Modal Travel Plan
+travelRouter.post('/plan', travelController.generateAiPlan);
+

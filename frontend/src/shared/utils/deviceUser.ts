@@ -55,9 +55,11 @@ export async function persistDeviceUserId(id: string): Promise<void> {
   }
 }
 
+export const DEFAULT_USER_ID = '00000000-0000-0000-0000-000000000001';
+
 /**
- * Synchronous getter: returns in-memory cached user ID or web localStorage value.
- * If not yet initialized, returns a freshly generated UUID and persists it in the background.
+ * Synchronous getter: returns cached UUID or web localStorage value.
+ * Generates and persists a unique UUID if none exists.
  */
 export function getDeviceUserIdSync(): string {
   if (cachedUserId && isValidUUID(cachedUserId)) {
@@ -83,6 +85,7 @@ export function getDeviceUserIdSync(): string {
 
 /**
  * Asynchronous getter: guarantees a persistent device user ID across app launches.
+ * Each device/teammate has their own separate inbox, notes, and calendar in Supabase.
  */
 export async function getDeviceUserId(): Promise<string> {
   if (cachedUserId && isValidUUID(cachedUserId)) {

@@ -141,6 +141,7 @@ export const financeService = {
   },
 
   async syncSmsTransactions(userId: string | undefined, transactions: any[]) {
+    await financeRepository.clearTransactions(userId);
     const syncedCount = await financeRepository.upsertTransactionsBatch(userId, transactions);
 
     // If transactions include rent credits, mark rent collected on assets

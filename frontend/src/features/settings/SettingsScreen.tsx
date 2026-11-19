@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { useSettingsStore } from './settings.store';
 import { useEmailUiStore } from '../email/store/emailUi.store';
+import { lockScreenService } from '../calendar/lockScreen.service';
 import { AppHeader } from '../navigation/AppHeader';
 import { AiModelChoice } from './settings.types';
 import { colors, radii, spacing, typography } from '../../shared/theme/tokens';
@@ -40,9 +41,24 @@ export const SettingsScreen: React.FC = () => {
   } = useEmailUiStore();
   const { showToast } = useToast();
 
+  const [isLockScreenActive, setIsLockScreenActive] = useState(true);
+
   useEffect(() => {
     checkOAuthStatus();
+    lockScreenService.isLockScreenEnabled().then(setIsLockScreenActive).catch(() => {});
   }, []);
+
+  const handleToggleLockScreen = async () => {
+    if (isLockScreenActive) {
+      await lockScreenService.stopLockScreenService();
+      setIsLockScreenActive(false);
+      showToast('Lock Screen Calendar disabled', 'info');
+    } else {
+      await lockScreenService.startLockScreenService();
+      setIsLockScreenActive(true);
+      showToast('Lock Screen Calendar active on device lock', 'success');
+    }
+  };
 
   const handleToggleConnection = async (item: (typeof connections)[0]) => {
     if (item.id === 'gmail') {
@@ -142,6 +158,39 @@ export const SettingsScreen: React.FC = () => {
           <Text style={styles.disclaimerText}>
             Credentials and API keys must be entered through provider OAuth or secure native credential storage.
           </Text>
+        </View>
+
+        {/* Lock Screen Calendar System */}
+        <View style={styles.card}>
+          <Text style={styles.cardKicker}>ANDROID SYSTEM</Text>
+          <Text style={styles.cardTitle}>Lock Screen Calendar</Text>
+          <Text style={styles.disclaimerText}>
+            Displays today's schedule and agenda directly when your phone screen turns on while locked. Automatically removed by Android OS when uninstalled.
+          </Text>
+          <View style={[styles.connRow, { marginTop: 12 }]}>
+            <View style={styles.connInfo}>
+              <Text style={styles.connName}>Show on Lock Screen</Text>
+              <Text style={styles.connDesc}>
+                {isLockScreenActive ? 'Active · Opens on phone lock' : 'Disabled'}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[
+                styles.connBadge,
+                isLockScreenActive ? styles.connBadgeActive : styles.connBadgeInactive,
+              ]}
+              onPress={handleToggleLockScreen}
+            >
+              <Text
+                style={[
+                  styles.connBadgeText,
+                  isLockScreenActive && styles.connBadgeTextActive,
+                ]}
+              >
+                {isLockScreenActive ? 'Active' : 'Enable'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* AI Control Room */}

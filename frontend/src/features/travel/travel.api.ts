@@ -9,6 +9,8 @@ import {
   CreateFareInput,
   CreateDocumentInput,
   Segment,
+  GenerateAiPlanInput,
+  AiTravelPlanResponse,
 } from './travel.types';
 
 export const travelApi = {
@@ -86,4 +88,11 @@ export const travelApi = {
     const res = await apiClient.post<TatkalTask>('/travel/tatkal', payload);
     return res.data;
   },
+
+  // 6. AI Multi-Modal Travel Plan
+  async generateAiPlan(payload: GenerateAiPlanInput): Promise<AiTravelPlanResponse> {
+    const res = await apiClient.post<AiTravelPlanResponse>('/travel/plan', payload);
+    return res.data;
+  },
 };
+

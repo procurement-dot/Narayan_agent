@@ -13,7 +13,12 @@ import { financeRouter } from './features/finance/finance.routes.js';
 
 export const app = express();
 
-app.use(helmet());
+app.use(
+  helmet({
+    crossOriginOpenerPolicy: false,
+    crossOriginResourcePolicy: false,
+  })
+);
 app.use(cors());
 // Support up to 25MB for audio base64 uploads
 app.use(express.json({ limit: '25mb' }));

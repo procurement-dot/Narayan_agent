@@ -13,6 +13,7 @@ export interface PillTabsProps<T extends string = string> {
   activeTab: T;
   onSelectTab?: (tabId: T) => void;
   onSelect?: (tabId: T) => void;
+  variant?: 'classic' | 'pastel';
 }
 
 export function PillTabs<T extends string = string>({
@@ -20,8 +21,10 @@ export function PillTabs<T extends string = string>({
   activeTab,
   onSelectTab,
   onSelect,
+  variant = 'classic',
 }: PillTabsProps<T>) {
   const handleSelect = onSelectTab || onSelect;
+  const isPastel = variant === 'pastel';
 
   return (
     <View style={styles.container}>
@@ -37,9 +40,17 @@ export function PillTabs<T extends string = string>({
               key={tab.id}
               activeOpacity={0.8}
               onPress={() => handleSelect?.(tab.id)}
-              style={[styles.pill, isSelected && styles.pillSelected]}
+              style={[
+                isPastel ? styles.pillPastel : styles.pill,
+                isSelected && (isPastel ? styles.pillPastelSelected : styles.pillSelected),
+              ]}
             >
-              <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
+              <Text
+                style={[
+                  isPastel ? styles.pillPastelText : styles.pillText,
+                  isSelected && (isPastel ? styles.pillPastelTextSelected : styles.pillTextSelected),
+                ]}
+              >
                 {tab.label}
               </Text>
             </TouchableOpacity>
@@ -78,6 +89,28 @@ const styles = StyleSheet.create({
   },
   pillTextSelected: {
     color: TOKENS.colors.paper,
+    fontWeight: '600',
+  },
+  // Exact match to index.html .n68-tabs button & .n68-tabs button.active
+  pillPastel: {
+    borderWidth: 1,
+    borderColor: '#e1e7df',
+    backgroundColor: '#ffffff',
+    borderRadius: 999,
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+  },
+  pillPastelSelected: {
+    backgroundColor: '#dfe9df',
+    borderColor: '#aabfac',
+  },
+  pillPastelText: {
+    fontSize: 12,
+    color: '#718375',
+    fontWeight: '500',
+  },
+  pillPastelTextSelected: {
+    color: '#31463a',
     fontWeight: '600',
   },
 });

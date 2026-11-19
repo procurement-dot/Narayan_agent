@@ -2,17 +2,25 @@ import { apiClient } from '../../../shared/api/client';
 import { getDeviceUserId } from '../../../shared/utils/deviceUser';
 import { EmailItem, ProposalItem } from '../types/email.types';
 
+export interface ConnectedEmailAccount {
+  id: string;
+  email: string;
+  updatedAt?: string | null;
+}
+
 export interface EmailSummaryResponse {
   requests: number;
   lowSignal: number;
   mergedMeetings: number;
   connected?: boolean;
   email?: string | null;
+  accounts?: ConnectedEmailAccount[];
 }
 
 export interface OAuthStatusResponse {
   connected: boolean;
   email: string | null;
+  accounts?: ConnectedEmailAccount[];
   updatedAt?: string | null;
 }
 
@@ -26,11 +34,38 @@ export interface SyncResponse {
 
 export const emailApi = {
   async getOAuthUrl(): Promise<string> {
-    const userId = await getDeviceUserId();
-    const res = await apiClient.get<{ url: string }>('/email/oauth/auth-url', {
-      params: { userId },
-    });
-    return res.data.url;
+    try {
+      const userId = await getDeviceUserId();
+      const clientId = '336166526092-k3p9s1nhskp3q23vdhsigl1vnbgit93s.apps.googleusercontent.com';
+      const redirectUri = 'https://narayan-agent.onrender.com/api/email/oauth/callback';
+      const scopes = [
+        'https://www.googleapis.com/auth/gmail.readonly',
+        'https://www.googleapis.com/auth/gmail.compose',
+        'https://www.googleapis.com/auth/gmail.modify',
+        'https://www.googleapis.com/auth/userinfo.email',
+        'https://www.googleapis.com/auth/userinfo.profile',
+        'https://www.googleapis.com/auth/calendar.events',
+        'https://www.googleapis.com/auth/calendar.readonly',
+      ].join(' ');
+
+      const params = [
+        `client_id=${encodeURIComponent(clientId)}`,
+        `redirect_uri=${encodeURIComponent(redirectUri)}`,
+        `response_type=code`,
+        `scope=${encodeURIComponent(scopes)}`,
+        `access_type=offline`,
+        `prompt=${encodeURIComponent('consent select_account')}`,
+        `state=${encodeURIComponent(userId || '00000000-0000-0000-0000-000000000001')}`,
+      ].join('&');
+
+      return `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
+    } catch {
+      const userId = '00000000-0000-0000-0000-000000000001';
+      const res = await apiClient.get<{ url: string }>('/email/oauth/auth-url', {
+        params: { userId },
+      });
+      return res.data.url;
+    }
   },
 
   async getOAuthStatus(): Promise<OAuthStatusResponse> {
@@ -38,8 +73,15 @@ export const emailApi = {
     return res.data;
   },
 
-  async disconnectOAuth(): Promise<{ success: boolean }> {
-    const res = await apiClient.post<{ success: boolean }>('/email/oauth/disconnect');
+  async exchangeOAuthCode(code: string, state?: string): Promise<any> {
+    const res = await apiClient.get('/email/oauth/callback', {
+      params: { code, state },
+    });
+    return res.data;
+  },
+
+  async disconnectOAuth(email?: string): Promise<{ success: boolean }> {
+    const res = await apiClient.post<{ success: boolean }>('/email/oauth/disconnect', { email });
     return res.data;
   },
 
@@ -52,13 +94,21 @@ export const emailApi = {
     return res.data;
   },
 
-  async getSummary(): Promise<EmailSummaryResponse> {
-    const res = await apiClient.get<EmailSummaryResponse>('/email/summary');
+  async getSummary(accountEmail?: string): Promise<EmailSummaryResponse> {
+    const params: any = {};
+    if (accountEmail && accountEmail !== 'all') {
+      params.accountEmail = accountEmail;
+    }
+    const res = await apiClient.get<EmailSummaryResponse>('/email/summary', { params });
     return res.data;
   },
 
-  async listEmails(tab?: string): Promise<EmailItem[]> {
-    const params = tab ? { tab } : {};
+  async listEmails(tab?: string, accountEmail?: string): Promise<EmailItem[]> {
+    const params: any = {};
+    if (tab) params.tab = tab;
+    if (accountEmail && accountEmail !== 'all') {
+      params.accountEmail = accountEmail;
+    }
     const res = await apiClient.get<EmailItem[]>('/email', { params });
     return res.data;
   },

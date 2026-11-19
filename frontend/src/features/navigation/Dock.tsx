@@ -17,7 +17,7 @@ import { useNavigationStore } from './navigation.store';
 import { Icon } from '../../shared/components/Icon';
 
 export const Dock: React.FC = () => {
-  const { isDockOpen, closeDock, currentSpace, navigate } = useNavigationStore();
+  const { isDockOpen, openDock, closeDock, currentSpace, navigate } = useNavigationStore();
   const slideAnim = useRef(new Animated.Value(120)).current;
   const useNative = Platform.OS !== 'web';
 
@@ -46,14 +46,70 @@ export const Dock: React.FC = () => {
         return gestureState.dx > 15 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy);
       },
       onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dx > 30) {
+        if (gestureState.dx > 25) {
           closeDock();
         }
       },
     })
   ).current;
 
-  if (!isDockOpen) return null;
+  // Swipe inwards from right edge to open dock
+  const rightEdgePanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return (
+          (gestureState.dx < -12 || gestureState.dx > 12) &&
+          Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.2
+        );
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dx < -15 || gestureState.dx > 15) {
+          openDock();
+        }
+      },
+    })
+  ).current;
+
+  // Swipe right from left edge to open dock
+  const leftEdgePanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return gestureState.dx > 15 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.2;
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dx > 20) {
+          openDock();
+        }
+      },
+    })
+  ).current;
+
+  if (!isDockOpen) {
+    return (
+      <>
+        {/* Right Edge Swipe Zone & Sleek Edge Pull Handle */}
+        <View style={styles.rightEdgeTriggerZone} {...rightEdgePanResponder.panHandlers}>
+          <TouchableOpacity
+            style={styles.edgeHandlePill}
+            onPress={openDock}
+            activeOpacity={0.75}
+            accessibilityLabel="Swipe or tap to open Navigation Dock"
+          >
+            <View style={styles.edgeHandleBar} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Left Edge Swipe Right Zone */}
+        <View
+          style={styles.leftEdgeTriggerZone}
+          {...leftEdgePanResponder.panHandlers}
+          pointerEvents="box-only"
+        />
+      </>
+    );
+  }
 
   const screenHeight = Dimensions.get('window').height;
   const maxDockHeight = Math.min(screenHeight * 0.82, 730);
@@ -231,5 +287,39 @@ const styles = StyleSheet.create({
     width: 4,
     height: 4,
     marginTop: 2,
+  },
+  rightEdgeTriggerZone: {
+    position: 'absolute',
+    right: 0,
+    top: '35%',
+    bottom: '35%',
+    width: 32,
+    zIndex: 88,
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+  },
+  leftEdgeTriggerZone: {
+    position: 'absolute',
+    left: 0,
+    top: '35%',
+    bottom: '35%',
+    width: 28,
+    zIndex: 88,
+  },
+  edgeHandlePill: {
+    width: 9,
+    height: 56,
+    backgroundColor: 'rgba(39, 56, 45, 0.28)',
+    borderTopLeftRadius: 6,
+    borderBottomLeftRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingRight: 2,
+  },
+  edgeHandleBar: {
+    width: 3,
+    height: 30,
+    backgroundColor: 'rgba(39, 56, 45, 0.75)',
+    borderRadius: 2,
   },
 });

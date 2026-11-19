@@ -119,3 +119,49 @@ export interface CreateDocumentInput {
   alertLeadMonths?: number;
   notes?: string;
 }
+
+// AI Multi-Modal Travel Planner
+export interface AiTravelOption {
+  type: 'flight' | 'train' | 'cab';
+  title: string;
+  provider: string;
+  seatingClassLabel: string;
+  departureTime: string;
+  arrivalTime: string;
+  returnDepartureTime?: string;
+  returnArrivalTime?: string;
+  duration: string;
+  estimatedCostInr: number;
+  formattedCost: string;
+  offerBadge?: string;
+  highlights: string[];
+  aiReasoning: string;
+  isRecommended: boolean;
+  feasibilityWarning?: string;
+}
+
+export interface AiTravelPlanResponse {
+  origin: string;
+  destination: string;
+  date: string;
+  returnDate?: string;
+  isRoundTrip: boolean;
+  seatingClass: 'executive' | 'standard' | 'economy';
+  preferredTime?: string;
+  distanceKm?: number;
+  aiSummary: string;
+  options: AiTravelOption[];
+}
+
+export interface GenerateAiPlanInput {
+  origin: string;
+  destination: string;
+  date: string;
+  returnDate?: string;
+  isRoundTrip?: boolean;
+  seatingClass?: 'executive' | 'standard' | 'economy';
+  preferredTime?: string;
+  notes?: string;
+}
+
+

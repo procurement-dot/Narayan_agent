@@ -54,12 +54,12 @@ export const emailService = {
     console.log('[EmailService] Multi-tenant background real-time auto-sync active');
   },
 
-  getOAuthUrl(userId: string = DEFAULT_USER_ID): string {
-    return gmailOAuth.getAuthorizationUrl(userId);
+  getOAuthUrl(userId: string = DEFAULT_USER_ID, redirectUri?: string): string {
+    return gmailOAuth.getAuthorizationUrl(userId, redirectUri);
   },
 
-  async handleOAuthCallback(code: string, userId: string = DEFAULT_USER_ID) {
-    const tokens = await gmailOAuth.exchangeCodeForTokens(code);
+  async handleOAuthCallback(code: string, userId: string = DEFAULT_USER_ID, redirectUri?: string) {
+    const tokens = await gmailOAuth.exchangeCodeForTokens(code, redirectUri);
     const account = await emailRepository.upsertEmailAccount({
       userId,
       email: tokens.email,
@@ -75,73 +75,92 @@ export const emailService = {
   },
 
   async getOAuthStatus(userId: string = DEFAULT_USER_ID) {
-    const account = await emailRepository.getEmailAccount(userId);
+    const accounts = await emailRepository.getEmailAccounts(userId);
     return {
-      connected: Boolean(account && account.refresh_token_enc),
-      email: account?.email || null,
-      updatedAt: account?.updated_at || null,
+      connected: accounts.length > 0,
+      email: accounts[0]?.email || null,
+      accounts: accounts.map((a: any) => ({
+        id: a.id,
+        email: a.email,
+        updatedAt: a.updated_at,
+      })),
+      updatedAt: accounts[0]?.updated_at || null,
     };
   },
 
-  async disconnectAccount(userId: string = DEFAULT_USER_ID) {
-    await emailRepository.disconnectEmailAccount(userId);
+  async disconnectAccount(userId: string = DEFAULT_USER_ID, email?: string) {
+    await emailRepository.disconnectEmailAccount(userId, email);
     return { success: true };
   },
 
   async syncEmails(userId: string = DEFAULT_USER_ID, maxResults = 15) {
-    const account = await emailRepository.getEmailAccount(userId);
-    if (!account || !account.refresh_token_enc) {
+    const accounts = await emailRepository.getEmailAccounts(userId);
+    if (!accounts || accounts.length === 0) {
       throw new Error('No connected Gmail account found for user. Please connect first.');
     }
 
-    const auth = gmailOAuth.getAuthenticatedClient(account.refresh_token_enc);
-    const existingIds = await emailRepository.getExistingMessageIds(account.id);
-    const recentMessages = await gmailService.fetchRecentEmails(auth, maxResults, existingIds);
-
     let newlyIngested = 0;
-    // Process new messages concurrently in parallel
-    await Promise.all(
-      recentMessages.map(async (msg) => {
-        try {
-          // Run Gemini 3.5 Flash intelligence analysis
-          const analysis = await emailAnalyzer.analyzeEmail({
-            fromName: msg.fromName,
-            fromEmail: msg.fromEmail,
-            subject: msg.subject,
-            content: msg.content,
-          });
+    let totalChecked = 0;
 
-          await emailRepository.insertEmailWithAnalysis(
-            account.id,
-            userId,
-            msg,
-            analysis
-          );
-          newlyIngested++;
-        } catch (itemErr) {
-          console.warn(`Failed to process message ${msg.providerMsgId}:`, itemErr);
-        }
-      })
-    );
+    for (const account of accounts) {
+      if (!account.refresh_token_enc) continue;
+      try {
+        const auth = gmailOAuth.getAuthenticatedClient(account.refresh_token_enc);
+        const existingIds = await emailRepository.getExistingMessageIds(account.id);
+        const recentMessages = await gmailService.fetchRecentEmails(auth, maxResults, existingIds);
+        totalChecked += recentMessages.length;
+
+        // Process new messages concurrently in parallel
+        await Promise.all(
+          recentMessages.map(async (msg) => {
+            try {
+              // Run Gemini 3.5 Flash intelligence analysis
+              const analysis = await emailAnalyzer.analyzeEmail({
+                fromName: msg.fromName,
+                fromEmail: msg.fromEmail,
+                subject: msg.subject,
+                content: msg.content,
+              });
+
+              await emailRepository.insertEmailWithAnalysis(
+                account.id,
+                userId,
+                msg,
+                analysis
+              );
+              newlyIngested++;
+            } catch (itemErr) {
+              console.warn(`Failed to process message ${msg.providerMsgId}:`, itemErr);
+            }
+          })
+        );
+      } catch (accErr) {
+        console.warn(`[EmailService] Failed sync for account ${account.email}:`, accErr);
+      }
+    }
 
     return {
       synced: newlyIngested,
-      totalChecked: recentMessages.length,
+      totalChecked,
     };
   },
 
-  async getSummary(userId: string = DEFAULT_USER_ID): Promise<EmailSummaryDto & { connected: boolean; email?: string | null }> {
+  async getSummary(
+    userId: string = DEFAULT_USER_ID,
+    accountEmail?: string
+  ): Promise<EmailSummaryDto & { connected: boolean; email?: string | null; accounts?: Array<{ id: string; email: string }> }> {
     try {
-      const summary = await emailRepository.getSummary(userId);
-      const account = await emailRepository.getEmailAccount(userId);
-      const isConnected = Boolean(account && account.refresh_token_enc);
+      const summary = await emailRepository.getSummary(userId, accountEmail);
+      const accounts = await emailRepository.getEmailAccounts(userId);
+      const isConnected = accounts.length > 0;
 
       // If connected but 0 emails yet, provide real 0s
       if (isConnected) {
         return {
           ...summary,
           connected: true,
-          email: account?.email || null,
+          email: accounts[0]?.email || null,
+          accounts: accounts.map((a: any) => ({ id: a.id, email: a.email })),
         };
       }
 
@@ -158,9 +177,13 @@ export const emailService = {
     }
   },
 
-  async listEmails(userId: string = DEFAULT_USER_ID, tab?: string): Promise<EmailDto[]> {
+  async listEmails(
+    userId: string = DEFAULT_USER_ID,
+    tab?: string,
+    accountEmail?: string
+  ): Promise<EmailDto[]> {
     try {
-      const rows = await emailRepository.getEmails(userId, tab);
+      const rows = await emailRepository.getEmails(userId, tab, accountEmail);
       return rows.map((r: any) => ({
         id: r.id,
         name: r.from_name || 'Unknown',
@@ -175,6 +198,7 @@ export const emailService = {
         confidence: (r.confidence as any) || 'High',
         status: r.status,
         proposalId: r.proposal_id || undefined,
+        accountEmail: r.account_email || undefined,
       }));
     } catch (err) {
       console.error('Failed to list emails:', err);

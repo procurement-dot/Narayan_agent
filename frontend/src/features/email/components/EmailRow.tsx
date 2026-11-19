@@ -35,7 +35,7 @@ export const EmailRow: React.FC<EmailRowProps> = ({
           {email.name} · {email.preview}
         </Text>
         <Text style={emailStyles.rowStatus}>
-          {displayStatus} · {kindLabel}
+          {email.accountEmail ? `${email.accountEmail.split('@')[0]} · ` : ''}{displayStatus} · {kindLabel}
         </Text>
       </View>
 

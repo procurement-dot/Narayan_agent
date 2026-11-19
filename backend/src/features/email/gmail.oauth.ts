@@ -3,44 +3,71 @@ import { createOAuth2Client, GMAIL_SCOPES } from '../../config/google.js';
 import { encryptToken, decryptToken } from '../../shared/utils/crypto.js';
 
 export const gmailOAuth = {
-  getAuthorizationUrl(state: string = 'default_user'): string {
-    const client = createOAuth2Client();
+  getAuthorizationUrl(state: string = 'default_user', redirectUri?: string): string {
+    const client = createOAuth2Client(redirectUri);
     return client.generateAuthUrl({
       access_type: 'offline',
-      prompt: 'consent',
+      prompt: 'consent select_account',
       scope: GMAIL_SCOPES,
       state,
+      redirect_uri: redirectUri,
     });
   },
 
-  async exchangeCodeForTokens(code: string) {
-    const client = createOAuth2Client();
-    const { tokens } = await client.getToken(code);
-    client.setCredentials(tokens);
+  async exchangeCodeForTokens(code: string, redirectUri?: string) {
+    const candidates = Array.from(
+      new Set(
+        [
+          'https://narayan-agent.onrender.com/api/email/oauth/callback',
+          redirectUri,
+          'http://localhost:4000/api/email/oauth/callback',
+        ].filter(Boolean) as string[]
+      )
+    );
 
-    // Get user info (email address)
-    const oauth2 = google.oauth2({ version: 'v2', auth: client });
-    const userInfo = await oauth2.userinfo.get();
-    const email = userInfo.data.email;
+    let lastError: any = null;
+    for (const uri of candidates) {
+      try {
+        const client = createOAuth2Client(uri);
+        const { tokens } = await client.getToken({
+          code,
+          redirect_uri: uri,
+        });
+        client.setCredentials(tokens);
 
-    if (!email) {
-      throw new Error('Unable to retrieve email from Google OAuth profile');
+        // Get user info (email address)
+        const oauth2 = google.oauth2({ version: 'v2', auth: client });
+        const userInfo = await oauth2.userinfo.get();
+        const email = userInfo.data.email;
+
+        if (!email) {
+          throw new Error('Unable to retrieve email from Google OAuth profile');
+        }
+
+        if (!tokens.refresh_token) {
+          throw new Error(
+            'Google did not return a refresh token. Make sure prompt="consent" is set.'
+          );
+        }
+
+        const refreshTokenEnc = encryptToken(tokens.refresh_token);
+
+        return {
+          email,
+          refreshTokenEnc,
+          accessToken: tokens.access_token,
+          expiryDate: tokens.expiry_date,
+        };
+      } catch (err: any) {
+        lastError = err;
+        const errMsg = String(err?.message || err);
+        if (errMsg.includes('redirect_uri_mismatch')) {
+          continue; // try next candidate
+        }
+        throw err;
+      }
     }
-
-    if (!tokens.refresh_token) {
-      throw new Error(
-        'Google did not return a refresh token. Make sure prompt="consent" is set.'
-      );
-    }
-
-    const refreshTokenEnc = encryptToken(tokens.refresh_token);
-
-    return {
-      email,
-      refreshTokenEnc,
-      accessToken: tokens.access_token,
-      expiryDate: tokens.expiry_date,
-    };
+    throw lastError;
   },
 
   getAuthenticatedClient(refreshTokenEnc: string) {

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
-import { Linking, Platform } from 'react-native';
+import { Linking, Platform, NativeModules } from 'react-native';
 import { EmailItem, EmailTab, ProposalItem } from '../types/email.types';
-import { emailApi, EmailSummaryResponse } from '../services/email.api';
+import { emailApi, EmailSummaryResponse, ConnectedEmailAccount } from '../services/email.api';
 import mockData from '../mock/email.mock.json';
 import { useCalendarStore } from '../../calendar/calendar.store';
 
@@ -18,6 +18,8 @@ interface EmailUiState {
   // Connection
   isConnected: boolean;
   connectedEmail: string | null;
+  connectedAccounts: ConnectedEmailAccount[];
+  selectedAccountEmail: string | 'all';
 
   // Loading
   isLoading: boolean;
@@ -31,15 +33,17 @@ interface EmailUiState {
 
   // Setters & Sheets
   setMailTab: (tab: EmailTab) => void;
+  setSelectedAccountEmail: (email: string | 'all') => void;
   openEmail: (id: string | null) => void;
   openProposal: (id: string | null) => void;
 
   // API Actions
-  fetchEmails: (tab?: EmailTab) => Promise<void>;
-  fetchSummary: () => Promise<void>;
+  fetchEmails: (tab?: EmailTab, accountEmail?: string | 'all') => Promise<void>;
+  fetchSummary: (accountEmail?: string | 'all') => Promise<void>;
   checkOAuthStatus: () => Promise<void>;
   connectGmail: () => Promise<void>;
-  disconnectGmail: () => Promise<void>;
+  connectWithCode: (input: string) => Promise<boolean>;
+  disconnectGmail: (email?: string) => Promise<void>;
   syncEmails: (options?: { silent?: boolean }) => Promise<{ synced: number; totalChecked: number } | null>;
   saveDraft: (emailId: string, text: string) => Promise<void>;
   generateDraft: (emailId: string, instruction?: string) => Promise<string>;
@@ -70,6 +74,8 @@ export const useEmailUiStore = create<EmailUiState>((set, get) => ({
 
   isConnected: false,
   connectedEmail: null,
+  connectedAccounts: [],
+  selectedAccountEmail: 'all',
   isLoading: false,
   isSyncing: false,
 
@@ -83,17 +89,30 @@ export const useEmailUiStore = create<EmailUiState>((set, get) => ({
     get().fetchEmails(tab);
   },
 
+  setSelectedAccountEmail: (email) => {
+    set({ selectedAccountEmail: email });
+    get().fetchEmails(get().mailTab, email);
+    get().fetchSummary(email);
+  },
+
   openEmail: (id) => set({ selectedEmailId: id }),
 
   openProposal: (id) => set({ selectedProposalId: id }),
 
-  fetchEmails: async (tab) => {
+  fetchEmails: async (tab, accountEmail) => {
     const currentTab = tab || get().mailTab;
+    const currentAccount = accountEmail !== undefined ? accountEmail : get().selectedAccountEmail;
     try {
       set({ isLoading: true });
-      const data = await emailApi.listEmails(currentTab);
+      const data = await emailApi.listEmails(currentTab, currentAccount);
       if (Array.isArray(data) && data.length > 0) {
-        set({ emails: data });
+        const seenIds = new Set<string>();
+        const uniqueEmails = data.filter((item) => {
+          if (!item.id || seenIds.has(item.id)) return false;
+          seenIds.add(item.id);
+          return true;
+        });
+        set({ emails: uniqueEmails });
       } else if (!get().isConnected) {
         // If not connected and no DB rows, keep mock data visible
         set({ emails: mockData.emails as EmailItem[] });
@@ -107,13 +126,16 @@ export const useEmailUiStore = create<EmailUiState>((set, get) => ({
     }
   },
 
-  fetchSummary: async () => {
+  fetchSummary: async (accountEmail) => {
+    const currentAccount = accountEmail !== undefined ? accountEmail : get().selectedAccountEmail;
     try {
-      const summary = await emailApi.getSummary();
+      const summary = await emailApi.getSummary(currentAccount);
+      const accounts = summary.accounts || (summary.email ? [{ id: '1', email: summary.email }] : []);
       set({
         summary,
         isConnected: Boolean(summary.connected),
         connectedEmail: summary.email || null,
+        connectedAccounts: accounts,
       });
     } catch (err) {
       console.warn('Failed to fetch summary from API:', err);
@@ -123,9 +145,11 @@ export const useEmailUiStore = create<EmailUiState>((set, get) => ({
   checkOAuthStatus: async () => {
     try {
       const status = await emailApi.getOAuthStatus();
+      const accounts = status.accounts || (status.email ? [{ id: '1', email: status.email }] : []);
       set({
         isConnected: status.connected,
         connectedEmail: status.email,
+        connectedAccounts: accounts,
       });
     } catch (err) {
       console.warn('Failed to check OAuth status:', err);
@@ -135,37 +159,103 @@ export const useEmailUiStore = create<EmailUiState>((set, get) => ({
   connectGmail: async () => {
     try {
       const url = await emailApi.getOAuthUrl();
-      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const isWeb = (Platform.OS as string) === 'web';
+
+      if (isWeb && typeof window !== 'undefined') {
         const width = 500;
         const height = 650;
         const left = window.screenX + (window.outerWidth - width) / 2;
         const top = window.screenY + (window.outerHeight - height) / 2;
-        const popup = window.open(
+        window.open(
           url,
           'Gmail OAuth Authorization',
           `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no`
         );
 
-        // Poll for completion or closure of popup safely (guard against COOP)
-        if (popup) {
-          const checkTimer = setInterval(async () => {
-            let isClosed = false;
-            try {
-              isClosed = Boolean(popup.closed);
-            } catch (coopErr) {
-              // Browser COOP blocks cross-origin popup.closed check; ignore safely
-            }
+        let cleanedUp = false;
+        let pollTimer: NodeJS.Timeout | null = null;
+        let maxTimeout: NodeJS.Timeout | null = null;
+        let bc: BroadcastChannel | null = null;
 
-            if (isClosed) {
-              clearInterval(checkTimer);
-              await get().checkOAuthStatus();
-              await get().fetchSummary();
-              await get().fetchEmails();
+        const handleSuccess = async () => {
+          if (cleanedUp) return;
+          cleanup();
+          await get().checkOAuthStatus();
+          await get().fetchSummary();
+          await get().fetchEmails();
+        };
+
+        const cleanup = () => {
+          cleanedUp = true;
+          if (pollTimer) clearInterval(pollTimer);
+          if (maxTimeout) clearTimeout(maxTimeout);
+          try {
+            bc?.close();
+          } catch {}
+          window.removeEventListener('storage', onStorage);
+          window.removeEventListener('message', onMessage);
+          window.removeEventListener('focus', onFocus);
+        };
+
+        // 1. BroadcastChannel
+        try {
+          if (typeof BroadcastChannel !== 'undefined') {
+            bc = new BroadcastChannel('nryn_oauth');
+            bc.onmessage = (ev) => {
+              if (ev.data?.type === 'GMAIL_CONNECTED') {
+                handleSuccess();
+              }
+            };
+          }
+        } catch {}
+
+        // 2. Storage event
+        const onStorage = (ev: StorageEvent) => {
+          if (ev.key === 'nryn_gmail_connected') {
+            handleSuccess();
+          }
+        };
+        window.addEventListener('storage', onStorage);
+
+        // 3. PostMessage event
+        const onMessage = (ev: MessageEvent) => {
+          if (ev.data?.type === 'GMAIL_CONNECTED') {
+            handleSuccess();
+          }
+        };
+        window.addEventListener('message', onMessage);
+
+        // 4. Focus event
+        const onFocus = async () => {
+          const status = await emailApi.getOAuthStatus().catch(() => null);
+          if (status?.connected) {
+            handleSuccess();
+          }
+        };
+        window.addEventListener('focus', onFocus);
+
+        // 5. Periodic status poll against backend API (never touches popup object)
+        pollTimer = setInterval(async () => {
+          try {
+            const status = await emailApi.getOAuthStatus();
+            if (status.connected) {
+              handleSuccess();
             }
-          }, 1500);
-          setTimeout(() => clearInterval(checkTimer), 60000);
-        }
+          } catch {}
+        }, 2000);
+
+        // 6. Stop polling after 60s
+        maxTimeout = setTimeout(() => {
+          cleanup();
+        }, 60000);
       } else {
+        if (Platform.OS === 'android' && NativeModules.OAuthServer) {
+          try {
+            await NativeModules.OAuthServer.startServer();
+          } catch (e) {
+            console.warn('[OAuthServer] start failed:', e);
+          }
+        }
         await Linking.openURL(url);
       }
     } catch (err) {
@@ -173,18 +263,51 @@ export const useEmailUiStore = create<EmailUiState>((set, get) => ({
     }
   },
 
-  disconnectGmail: async () => {
+  connectWithCode: async (input: string) => {
     try {
       set({ isLoading: true });
-      await emailApi.disconnectOAuth();
-      set({
-        isConnected: false,
-        connectedEmail: null,
-        emails: mockData.emails as EmailItem[],
-        summary: { requests: 3, lowSignal: 1, mergedMeetings: 2, connected: false, email: null },
-        mailDrafts: {},
-        mailStatus: {},
-      });
+      let code = input.trim();
+      let state = await getDeviceUserId();
+
+      if (code.includes('code=')) {
+        const matchCode = code.match(/code=([^&]+)/);
+        if (matchCode) code = decodeURIComponent(matchCode[1]);
+        const matchState = input.match(/state=([^&]+)/);
+        if (matchState) state = decodeURIComponent(matchState[1]);
+      }
+
+      await emailApi.exchangeOAuthCode(code, state);
+      await get().checkOAuthStatus();
+      await get().fetchSummary();
+      await get().fetchEmails();
+      await get().syncEmails({ silent: false }).catch(() => {});
+      return true;
+    } catch (err: any) {
+      console.warn('connectWithCode failed:', err);
+      throw err;
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  disconnectGmail: async (email?: string) => {
+    try {
+      set({ isLoading: true });
+      await emailApi.disconnectOAuth(email);
+      await get().checkOAuthStatus();
+      await get().fetchSummary();
+      await get().fetchEmails();
+
+      if (!get().isConnected) {
+        set({
+          connectedEmail: null,
+          connectedAccounts: [],
+          emails: mockData.emails as EmailItem[],
+          summary: { requests: 3, lowSignal: 1, mergedMeetings: 2, connected: false, email: null },
+          mailDrafts: {},
+          mailStatus: {},
+        });
+      }
 
       // Broadcast to other windows/tabs
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
@@ -371,7 +494,7 @@ export const useEmailUiStore = create<EmailUiState>((set, get) => ({
 }));
 
 // Listen for cross-window messages on web when OAuth completes
-if (typeof window !== 'undefined') {
+if (Platform.OS === 'web' && typeof window !== 'undefined') {
   const refreshAll = () => {
     useEmailUiStore.getState().checkOAuthStatus();
     useEmailUiStore.getState().fetchSummary();

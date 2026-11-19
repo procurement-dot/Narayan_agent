@@ -47,41 +47,44 @@ export async function requestSmsPermission(): Promise<boolean> {
 /**
  * Fallback sample bank SMS messages for web / testing environment
  */
+const currentYr = 2024;
+const currentYrShort = '24';
+
 const SAMPLE_BANK_SMS: RawSmsMessage[] = [
   {
     id: 'mock-sms-1',
-    address: 'VK-HDFCBK',
-    body: 'Rs 25,000.00 credited to HDFC Bank A/c *0421 on 01-Nov-26 by Rent Payment from Priya Sharma. Avl Bal: INR 1,42,850.00',
+    address: 'VK-SBIINB',
+    body: `Rs 1,500.00 credited to SBI A/c *3098 on 31-Oct-${currentYrShort} by UPI. Avl Bal: INR 11,540.29`,
     date: Date.now() - 86400000 * 2,
   },
   {
     id: 'mock-sms-2',
-    address: 'AD-ICICIB',
-    body: 'INR 1,450.00 debited from ICICI Bank Card ending 9012 on 03-Nov-26 at STARBUCKS PUNE. Bal: INR 88,400.00',
+    address: 'AD-SBIINB',
+    body: `INR 10.00 debited from SBI A/c *3098 on 07-Jun-${currentYrShort} towards UPI transfer. Bal: INR 8,494.29`,
     date: Date.now() - 86400000 * 4,
   },
   {
     id: 'mock-sms-3',
-    address: 'AX-SBIINB',
-    body: 'Sent Rs. 3,200 via UPI from SBI A/c *7789 to swiggy@icici on 05-Nov-26. Clear Bal Rs 64,120.00',
+    address: 'AD-SBIINB',
+    body: `SBI: A/c 3098 debited by Rs 1.00 on 28-Jun-${currentYrShort}. Avl Bal Rs 11,540.29`,
     date: Date.now() - 86400000 * 6,
   },
   {
     id: 'mock-sms-4',
-    address: 'CP-AXISBK',
-    body: 'Axis Bank Credit Card XX4401 statement generated. Total Amt Due: Rs 14,200.00. Payment Due Date: 24-Nov-2026.',
+    address: 'AD-SBISMS',
+    body: `Dear Customer, your A/c XXXXX593098 is credited for Rs 1500.00 on 16-Jun-${currentYrShort}. Avl Bal: Rs 9,994.29`,
     date: Date.now() - 86400000 * 8,
   },
   {
     id: 'mock-sms-5',
-    address: 'VK-HDFCBK',
-    body: 'Salary of Rs 1,85,000.00 credited to your A/c *0421 on 31-Oct-26. Avl Bal: INR 2,12,850.00',
+    address: 'AD-SBMSMS',
+    body: `SBI: A/c 3098 debited by Rs 70.00 on 02-Jan-${currentYrShort}. Avl Bal: Rs 5,292.01`,
     date: Date.now() - 86400000 * 12,
   },
   {
     id: 'mock-sms-6',
-    address: 'VK-HDFCBK',
-    body: 'SIP of Rs 25,000.00 debited from HDFC Bank A/c *0421 towards NIPPON INDIA MUTUAL FUND. Bal: INR 1,17,850.00',
+    address: 'AD-SBIINB',
+    body: `State Bank of India: Rs 2.00 debited from A/c 3098 on 13-Oct-${currentYrShort}. Bal: Rs 9,492.00`,
     date: Date.now() - 86400000 * 14,
   },
 ];
@@ -228,9 +231,14 @@ export async function syncAllBankTransactions(onProgress?: ProgressCallback): Pr
     // Associate transaction with an existing detected account for this bank
     let matchedAcc = detectedAccounts.find((acc) => {
       if (acc.bank !== tx.bankName) return false;
-      // If both have raw digits, check if one ends with the other (e.g. 593098 vs 098 or 3098)
+      // If both have raw digits, check if one ends with or contains the other (e.g. 593098 vs 098 or 3098)
       if (acc.rawDigits && txRawDigits) {
-        return acc.rawDigits.endsWith(txRawDigits) || txRawDigits.endsWith(acc.rawDigits);
+        return (
+          acc.rawDigits.endsWith(txRawDigits) ||
+          txRawDigits.endsWith(acc.rawDigits) ||
+          acc.rawDigits.includes(txRawDigits) ||
+          txRawDigits.includes(acc.rawDigits)
+        );
       }
       // If one of them has no digits, match by bank for primary account
       return true;
@@ -245,8 +253,8 @@ export async function syncAllBankTransactions(onProgress?: ProgressCallback): Pr
       };
       detectedAccounts.push(matchedAcc);
     } else {
-      // Upgrade mask if new tx has more specific/longer account digits
-      if (txRawDigits && txRawDigits.length > matchedAcc.rawDigits.length) {
+      // Standardize mask: prefer the 4-digit mask ending if available
+      if (txRawDigits && txRawDigits.length >= matchedAcc.rawDigits.length) {
         matchedAcc.rawDigits = txRawDigits;
         if (txMask) {
           matchedAcc.mask = txMask;
@@ -262,16 +270,16 @@ export async function syncAllBankTransactions(onProgress?: ProgressCallback): Pr
     tx.accountMask = matchedAcc.mask;
   }
 
-  // Count transactions per bank to filter out one-off payment gateway/spam messages
+  // Count transactions per bank
   const bankTxCounts = new Map<string, number>();
   for (const tx of deduplicatedTransactions) {
     bankTxCounts.set(tx.bankName, (bankTxCounts.get(tx.bankName) || 0) + 1);
   }
 
-  // Only list genuine bank accounts: User's primary bank (SBI) or accounts with at least 5 transactions and a confirmed mask
+  // Only list genuine bank accounts that have at least 1 verified transaction
   const verifiedAccounts = detectedAccounts.filter((a) => {
     const txCount = bankTxCounts.get(a.bank) || 0;
-    return a.bank === 'State Bank of India' || (txCount >= 5 && a.mask !== '•••• Primary');
+    return txCount > 0;
   });
 
   const summary: SmsSyncSummary = {

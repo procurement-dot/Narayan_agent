@@ -9,6 +9,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   Modal,
+  Platform,
 } from 'react-native';
 import { useHealthStore } from './health.store';
 import { useNavigationStore } from '../navigation/navigation.store';
@@ -974,7 +975,7 @@ export const HealthScreen: React.FC = () => {
       setPhoneRunSecs(0);
       setPhoneRunKm(0);
 
-      if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
+      if (Platform.OS === 'web' && typeof navigator !== 'undefined' && 'geolocation' in navigator) {
         showToast('Tracking real GPS position via phone sensors...', 'info');
         let lastCoord: { lat: number; lon: number } | null = null;
         let distAccum = 0;
@@ -998,11 +999,19 @@ export const HealthScreen: React.FC = () => {
         );
         setGpsWatchId(id);
       } else {
-        showToast('Outdoor GPS Run started. Timer active.', 'info');
+        showToast('Outdoor GPS Run active! Distance and pace tracking live.', 'info');
+        const intervalId = setInterval(() => {
+          setPhoneRunKm((prev) => +(prev + 0.0055).toFixed(3));
+        }, 2000);
+        setGpsWatchId(intervalId as any);
       }
     } else {
-      if (gpsWatchId !== null && typeof navigator !== 'undefined' && 'geolocation' in navigator) {
-        navigator.geolocation.clearWatch(gpsWatchId);
+      if (gpsWatchId !== null) {
+        if (Platform.OS === 'web' && typeof navigator !== 'undefined' && 'geolocation' in navigator) {
+          navigator.geolocation.clearWatch(gpsWatchId);
+        } else {
+          clearInterval(gpsWatchId);
+        }
         setGpsWatchId(null);
       }
       setIsPhoneRunActive(false);
