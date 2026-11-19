@@ -6,7 +6,12 @@ import {
   DocumentDto,
   TatkalDto,
   TravelOverviewDto,
+  GenerateAiPlanInput,
+  AiTravelOptionDto,
+  AiTravelPlanResponseDto,
 } from './travel.dto.js';
+import { env } from '../../config/env.js';
+import { buildRealWorldAiPlanBackend } from './travelRouteIntelligence.js';
 
 function formatCurrencyINR(amount: number): string {
   return new Intl.NumberFormat('en-IN', {
@@ -346,4 +351,173 @@ export const travelService = {
       status: created.status,
     };
   },
+
+  // 6. AI Multi-Modal Travel Planner
+  async generateAiPlan(input: GenerateAiPlanInput): Promise<AiTravelPlanResponseDto> {
+    const origin = input.origin.trim();
+    const destination = input.destination.trim();
+    const date = input.date;
+    const isRoundTrip = !!input.isRoundTrip;
+    const returnDate = input.returnDate && input.returnDate.trim() ? input.returnDate.trim() : undefined;
+    const seatingClass = input.seatingClass || 'executive';
+    const preferredTime = input.preferredTime || 'Morning / Flexible';
+    const notes = input.notes || '';
+
+    // Distance estimation matrix for major Indian hubs (km)
+    const key = `${origin.toLowerCase()}-${destination.toLowerCase()}`;
+    const reverseKey = `${destination.toLowerCase()}-${origin.toLowerCase()}`;
+    const distanceMap: Record<string, number> = {
+      'pune-mumbai': 150,
+      'mumbai-pune': 150,
+      'pune-delhi': 1430,
+      'delhi-pune': 1430,
+      'mumbai-delhi': 1410,
+      'delhi-mumbai': 1410,
+      'pune-bengaluru': 840,
+      'bengaluru-pune': 840,
+      'mumbai-goa': 580,
+      'goa-mumbai': 580,
+      'pune-goa': 460,
+      'goa-pune': 460,
+      'pune-hyderabad': 560,
+      'hyderabad-pune': 560,
+      'mumbai-ahmedabad': 525,
+      'ahmedabad-mumbai': 525,
+      'pune-udaipur': 870,
+      'udaipur-pune': 870,
+      'pune-vadodara': 540,
+      'vadodara-pune': 540,
+      'delhi-jaipur': 280,
+      'jaipur-delhi': 280,
+      'bengaluru-chennai': 350,
+      'chennai-bengaluru': 350,
+    };
+
+    const distanceKm = distanceMap[key] || distanceMap[reverseKey] || 720;
+    const apiKey =
+      (env as any).GEMINI_API_KEY ||
+      env.LLM_API_KEY ||
+      process.env.GEMINI_API_KEY ||
+      process.env.LLM_API_KEY;
+
+    // 1. Try Gemini / OpenRouter if API key is provided
+    if (apiKey && apiKey !== 'your-llm-api-key') {
+      try {
+        const isOpenRouter =
+          env.LLM_PROVIDER === 'openrouter' ||
+          apiKey.startsWith('sk-or-') ||
+          process.env.OPENROUTER_BASE_URL !== undefined;
+
+        const systemPrompt = `You are NRYN AI, an executive travel intelligence assistant for high-level directors and leaders in India.
+Analyze this travel request from "${origin}" to "${destination}".
+Outbound Date: "${date}"
+Trip Type: ${isRoundTrip ? `ROUND-TRIP (Return Date: "${returnDate || '2 days later'}")` : 'ONE-WAY'}
+Seating Class Preference: "${seatingClass.toUpperCase()}" (e.g. Executive Class / EC / Business vs Standard AC / CC / Economy)
+Preferred Time: ${preferredTime}, Notes: ${notes}. Distance: approx ${distanceKm} km.
+
+Evaluate live travel pricing patterns (MakeMyTrip, IRCTC, Intercity Cabs) and provide exactly 3 multi-modal plans:
+1. FLIGHT:
+   - Reflect "${seatingClass}" seating (e.g. ${seatingClass === 'executive' ? 'Business / Premium Priority Seat' : 'Standard Economy'}).
+   - If round-trip, calculate combined return fare with return discount and show return departure & arrival.
+2. TRAIN:
+   - Reflect "${seatingClass}" class (e.g. ${seatingClass === 'executive' ? 'Executive Chair Car (EC) or 1st AC' : 'AC Chair Car (CC) or 3rd AC'}).
+   - Note Tatkal booking time (10:00 AM AC).
+3. CAB / ROAD:
+   - Reflect vehicle (${seatingClass === 'executive' ? 'Innova Crysta / SUV' : 'AC Sedan'}).
+   - If distance is over 500 km, add feasibilityWarning explaining that long road drive is impractical for corporate directors.
+
+Respond ONLY with valid JSON matching this schema without markdown code fences:
+{
+  "aiSummary": "Executive summary of options, duration, and recommendation",
+  "options": [
+    {
+      "type": "flight",
+      "title": "Airline & Flight Details",
+      "provider": "e.g. IndiGo 6E-205",
+      "seatingClassLabel": "${seatingClass === 'executive' ? 'Executive Priority / Business' : 'Standard Economy'}",
+      "departureTime": "HH:MM AM/PM",
+      "arrivalTime": "HH:MM AM/PM",
+      "returnDepartureTime": ${isRoundTrip ? '"HH:MM AM/PM"' : 'undefined'},
+      "returnArrivalTime": ${isRoundTrip ? '"HH:MM AM/PM"' : 'undefined'},
+      "duration": "Duration per leg",
+      "estimatedCostInr": 4800,
+      "formattedCost": "₹4,800",
+      "offerBadge": "🏷️ Save ₹850 · MMTSTEAL",
+      "highlights": ["highlight 1", "highlight 2"],
+      "aiReasoning": "Why this fits the director's schedule",
+      "isRecommended": true
+    },
+    ...
+  ]
+}`;
+
+        let aiText = '';
+        if (isOpenRouter) {
+          const model = env.LLM_MODEL || 'google/gemini-2.5-flash';
+          const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+              'HTTP-Referer': process.env.RENDER_EXTERNAL_URL || 'https://narayan-agent.onrender.com',
+              'X-Title': 'NRYN Travel Agent',
+            },
+            body: JSON.stringify({
+              model,
+              messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: `Plan ${isRoundTrip ? 'round-trip' : 'one-way'} travel from ${origin} to ${destination} on ${date}` }],
+            }),
+          });
+          if (resp.ok) {
+            const data: any = await resp.json();
+            aiText = data?.choices?.[0]?.message?.content || '';
+          }
+        } else {
+          // Direct Gemini
+          const resp = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: systemPrompt }] }],
+                generationConfig: { response_mime_type: 'application/json' },
+              }),
+            }
+          );
+          if (resp.ok) {
+            const data: any = await resp.json();
+            aiText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          }
+        }
+
+        if (aiText) {
+          const jsonMatch = aiText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+            if (Array.isArray(parsed.options) && parsed.options.length > 0) {
+              return {
+                origin,
+                destination,
+                date,
+                returnDate,
+                isRoundTrip,
+                seatingClass,
+                preferredTime,
+                distanceKm,
+                aiSummary: parsed.aiSummary || `Comparative assessment for ${origin} to ${destination}.`,
+                options: parsed.options,
+              };
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[travelService.generateAiPlan] AI call failed, using built-in travel intelligence engine:', err);
+      }
+    }
+
+    // 2. Built-in Real-World Travel Intelligence Engine (Zero Failure / Exact IRCTC & Airline Routes)
+    return buildRealWorldAiPlanBackend(input);
+  },
 };
+
+

@@ -9,6 +9,7 @@ import {
   createFareAlertSchema,
   createDocumentSchema,
   createTatkalSchema,
+  generateAiPlanSchema,
 } from './travel.dto.js';
 
 export const travelController = {
@@ -198,4 +199,20 @@ export const travelController = {
       return res.status(500).json({ error: 'Failed to create tatkal task' });
     }
   },
+
+  // 6. AI Multi-Modal Travel Plan
+  async generateAiPlan(req: Request, res: Response) {
+    try {
+      const parsed = generateAiPlanSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.format() });
+      }
+      const plan = await travelService.generateAiPlan(parsed.data);
+      return res.json(plan);
+    } catch (err: any) {
+      console.error('[TravelController.generateAiPlan] Error:', err);
+      return res.status(500).json({ error: 'Failed to generate AI travel plan' });
+    }
+  },
 };
+

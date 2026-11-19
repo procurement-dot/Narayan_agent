@@ -168,3 +168,53 @@ export interface TravelOverviewDto {
     travelDate: string;
   };
 }
+
+// ==========================================
+// 6. AI Multi-Modal Travel Planner
+// ==========================================
+
+export const generateAiPlanSchema = z.object({
+  origin: z.string().min(1, 'Origin city is required'),
+  destination: z.string().min(1, 'Destination city is required'),
+  date: z.string().min(1, 'Travel date is required'),
+  returnDate: z.string().optional().default(''),
+  isRoundTrip: z.boolean().optional().default(false),
+  seatingClass: z.enum(['executive', 'standard', 'economy']).optional().default('executive'),
+  preferredTime: z.string().optional().default('Anytime'),
+  notes: z.string().optional().default(''),
+});
+
+export type GenerateAiPlanInput = z.infer<typeof generateAiPlanSchema>;
+
+export interface AiTravelOptionDto {
+  type: 'flight' | 'train' | 'cab';
+  title: string;
+  provider: string;
+  seatingClassLabel: string;
+  departureTime: string;
+  arrivalTime: string;
+  returnDepartureTime?: string;
+  returnArrivalTime?: string;
+  duration: string;
+  estimatedCostInr: number;
+  formattedCost: string;
+  offerBadge?: string;
+  highlights: string[];
+  aiReasoning: string;
+  isRecommended: boolean;
+  feasibilityWarning?: string;
+}
+
+export interface AiTravelPlanResponseDto {
+  origin: string;
+  destination: string;
+  date: string;
+  returnDate?: string;
+  isRoundTrip: boolean;
+  seatingClass: 'executive' | 'standard' | 'economy';
+  preferredTime?: string;
+  distanceKm?: number;
+  aiSummary: string;
+  options: AiTravelOptionDto[];
+}
+
