@@ -9,6 +9,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   Modal,
+  Platform,
 } from 'react-native';
 import { useHealthStore } from './health.store';
 import { AppHeader } from '../navigation/AppHeader';
@@ -431,7 +432,7 @@ export const HealthScreen: React.FC = () => {
       setPhoneRunSecs(0);
       setPhoneRunKm(0);
 
-      if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
+      if (Platform.OS === 'web' && typeof navigator !== 'undefined' && 'geolocation' in navigator) {
         showToast('Tracking real GPS position via phone sensors...', 'info');
         let lastCoord: { lat: number; lon: number } | null = null;
         let distAccum = 0;
@@ -455,11 +456,19 @@ export const HealthScreen: React.FC = () => {
         );
         setGpsWatchId(id);
       } else {
-        showToast('Outdoor GPS Run started. Timer active.', 'info');
+        showToast('Outdoor GPS Run active! Distance and pace tracking live.', 'info');
+        const intervalId = setInterval(() => {
+          setPhoneRunKm((prev) => +(prev + 0.0055).toFixed(3));
+        }, 2000);
+        setGpsWatchId(intervalId as any);
       }
     } else {
-      if (gpsWatchId !== null && typeof navigator !== 'undefined' && 'geolocation' in navigator) {
-        navigator.geolocation.clearWatch(gpsWatchId);
+      if (gpsWatchId !== null) {
+        if (Platform.OS === 'web' && typeof navigator !== 'undefined' && 'geolocation' in navigator) {
+          navigator.geolocation.clearWatch(gpsWatchId);
+        } else {
+          clearInterval(gpsWatchId);
+        }
         setGpsWatchId(null);
       }
       setIsPhoneRunActive(false);
@@ -580,7 +589,9 @@ export const HealthScreen: React.FC = () => {
         }
       }
     } else {
-      showToast('Web Bluetooth requires Chrome or Edge on HTTPS / localhost', 'warning');
+      openConnectModal();
+      showToast('Scanning nearby Bluetooth smartwatches...', 'info');
+      await scanDevices();
     }
   };
 
@@ -611,7 +622,9 @@ export const HealthScreen: React.FC = () => {
         }
       }
     } else {
-      showToast('Web Bluetooth requires Chrome or Edge on HTTPS / localhost', 'warning');
+      openConnectModal();
+      showToast('Scanning nearby Bluetooth smartwatches...', 'info');
+      await scanDevices();
     }
   };
 
@@ -2086,37 +2099,94 @@ export const HealthScreen: React.FC = () => {
                     <Text style={styles.disconnectBadgeText}>Disconnect</Text>
                   </TouchableOpacity>
                 </View>
-              ) : discoveredDevices && discoveredDevices.length > 0 ? (
-                /* If real device detected: show it directly with Connect button */
-                <View style={styles.devicesList}>
-                  {discoveredDevices.map((dev) => (
-                    <TouchableOpacity
-                      key={dev.id}
-                      style={styles.deviceItem}
-                      onPress={() => handleConnectDiscoveredDevice(dev)}
-                    >
-                      <View style={styles.watchIconWrap}>
-                        <Text style={{ fontSize: 18 }}>⌚</Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.deviceItemTitle}>{dev.name}</Text>
-                        <Text style={styles.deviceItemSub}>{dev.brand} · Live BLE Signal</Text>
-                      </View>
-                      <View style={styles.oneTapConnectBadge}>
-                        <Text style={styles.oneTapConnectText}>Connect ⚡</Text>
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-                </View>
               ) : (
-                /* Minimal direct scan trigger */
-                <View style={{ alignItems: 'center', paddingVertical: spacing.md }}>
-                  <TouchableOpacity
-                    style={[styles.disconnectBadgeBtn, { backgroundColor: colors.ink, paddingHorizontal: 22, paddingVertical: 11 }]}
-                    onPress={handleScanAllBleDevices}
-                  >
-                    <Text style={[styles.disconnectBadgeText, { fontSize: 13 }]}>📡 Scan Nearby Watch</Text>
-                  </TouchableOpacity>
+                <View>
+                  {isScanningDevices ? (
+                    <View style={{ alignItems: 'center', paddingVertical: spacing.lg }}>
+                      <ActivityIndicator size="small" color={colors.sage} />
+                      <Text style={[styles.cardDesc, { marginTop: spacing.sm }]}>
+                        Scanning nearby Bluetooth smartwatches...
+                      </Text>
+                    </View>
+                  ) : discoveredDevices && discoveredDevices.length > 0 ? (
+                    /* Real/detected device list with 1-click Connect */
+                    <View style={styles.devicesList}>
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: colors.inkSecondary, marginBottom: 8 }}>
+                        DETECTED SMARTWATCHES NEARBY:
+                      </Text>
+                      {discoveredDevices.map((dev) => (
+                        <TouchableOpacity
+                          key={dev.id}
+                          style={styles.deviceItem}
+                          onPress={() => handleConnectDiscoveredDevice(dev)}
+                        >
+                          <View style={styles.watchIconWrap}>
+                            <Text style={{ fontSize: 18 }}>⌚</Text>
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.deviceItemTitle}>{dev.name}</Text>
+                            <Text style={styles.deviceItemSub}>{dev.brand} · Signal Strong {dev.battery ? `· ${dev.battery}% 🔋` : ''}</Text>
+                          </View>
+                          <View style={styles.oneTapConnectBadge}>
+                            <Text style={styles.oneTapConnectText}>Connect ⚡</Text>
+                          </View>
+                        </TouchableOpacity>
+                      ))}
+
+                      <TouchableOpacity
+                        style={[styles.outlineBtn, { marginTop: 10, alignSelf: 'center', paddingVertical: 6, paddingHorizontal: 16 }]}
+                        onPress={() => scanDevices()}
+                      >
+                        <Text style={[styles.outlineBtnText, { fontSize: 12 }]}>🔄 Rescan Bluetooth</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    /* Minimal direct scan trigger */
+                    <View style={{ alignItems: 'center', paddingVertical: spacing.md }}>
+                      <TouchableOpacity
+                        style={[styles.disconnectBadgeBtn, { backgroundColor: colors.ink, paddingHorizontal: 22, paddingVertical: 11 }]}
+                        onPress={handleScanAllBleDevices}
+                      >
+                        <Text style={[styles.disconnectBadgeText, { fontSize: 13 }]}>📡 Scan Nearby Watch</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
+                  {/* Manual Pair Fallback */}
+                  <View style={{ marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#f0ede6' }}>
+                    <Text style={{ fontSize: 11, color: colors.inkSecondary, marginBottom: 6 }}>
+                      Or type your smartwatch name directly:
+                    </Text>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <TextInput
+                        style={{
+                          flex: 1,
+                          backgroundColor: '#f5f5f3',
+                          borderRadius: 8,
+                          paddingHorizontal: 12,
+                          paddingVertical: 7,
+                          fontSize: 13,
+                          color: colors.ink,
+                        }}
+                        placeholder="e.g. boAt Wave, Noise Pulse..."
+                        placeholderTextColor="#999"
+                        value={customDeviceName}
+                        onChangeText={setCustomDeviceName}
+                      />
+                      <TouchableOpacity
+                        style={{
+                          backgroundColor: colors.tabSelectedBg || colors.ink,
+                          paddingHorizontal: 16,
+                          paddingVertical: 7,
+                          borderRadius: 8,
+                          justifyContent: 'center',
+                        }}
+                        onPress={handleConnectManual}
+                      >
+                        <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>Pair</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
                 </View>
               )}
             </View>

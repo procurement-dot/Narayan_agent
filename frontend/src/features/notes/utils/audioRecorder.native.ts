@@ -1,16 +1,28 @@
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
+import { NativeModules, Platform } from 'react-native';
 
-interface AudioRecordResult {
+export interface AudioRecordResult {
   audioBase64?: string;
+  rawTranscript?: string;
   mimeType: string;
 }
 
 class NativeAudioRecorder {
   private recording: Audio.Recording | null = null;
 
-  async start(): Promise<boolean> {
+  async start(lang: string = 'mr-IN'): Promise<boolean> {
     try {
+      // 1. Start Native Android Speech Recognition for live spoken transcript
+      if (Platform.OS === 'android' && NativeModules.OAuthServer?.startSpeechRecognition) {
+        try {
+          await NativeModules.OAuthServer.startSpeechRecognition(lang);
+        } catch (speechErr) {
+          console.warn('[SpeechRecognizer] start failed:', speechErr);
+        }
+      }
+
+      // 2. Request mic permission and start expo-av audio recording
       const perm = await Audio.requestPermissionsAsync();
       if (!perm.granted) {
         console.warn('Microphone permission not granted on mobile');
@@ -34,9 +46,23 @@ class NativeAudioRecorder {
   }
 
   async stop(): Promise<AudioRecordResult> {
+    let rawTranscript = '';
+
+    // 1. Stop Speech Recognition and fetch transcribed words
+    if (Platform.OS === 'android' && NativeModules.OAuthServer?.stopSpeechRecognition) {
+      try {
+        const text = await NativeModules.OAuthServer.stopSpeechRecognition();
+        if (text && typeof text === 'string') {
+          rawTranscript = text.trim();
+        }
+      } catch (speechErr) {
+        console.warn('[SpeechRecognizer] stop failed:', speechErr);
+      }
+    }
+
     try {
       if (!this.recording) {
-        return { mimeType: 'audio/m4a' };
+        return { rawTranscript, mimeType: 'audio/m4a' };
       }
 
       await this.recording.stopAndUnloadAsync();
@@ -49,19 +75,23 @@ class NativeAudioRecorder {
         });
         return {
           audioBase64: `data:audio/m4a;base64,${base64Data}`,
+          rawTranscript,
           mimeType: 'audio/m4a',
         };
       }
 
-      return { mimeType: 'audio/m4a' };
+      return { rawTranscript, mimeType: 'audio/m4a' };
     } catch (err) {
       console.error('Error stopping native audio recording:', err);
       this.cleanup();
-      return { mimeType: 'audio/m4a' };
+      return { rawTranscript, mimeType: 'audio/m4a' };
     }
   }
 
   cancel() {
+    if (Platform.OS === 'android' && NativeModules.OAuthServer?.stopSpeechRecognition) {
+      NativeModules.OAuthServer.stopSpeechRecognition().catch(() => {});
+    }
     this.cleanup();
   }
 

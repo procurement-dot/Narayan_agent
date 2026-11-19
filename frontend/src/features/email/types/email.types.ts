@@ -16,6 +16,8 @@ export interface EmailItem {
   confidence: 'High' | 'Medium' | 'Low';
   status?: string;
   proposalId?: string;
+  accountEmail?: string;
+  accountId?: string;
 }
 
 export interface ProposalItem {

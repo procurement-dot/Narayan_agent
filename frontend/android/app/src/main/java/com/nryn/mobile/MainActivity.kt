@@ -44,27 +44,45 @@ class MainActivity : ReactActivity() {
   }
 
   fun setupLockScreenDisplay() {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-      setShowWhenLocked(true)
-      setTurnScreenOn(true)
-    } else {
-      @Suppress("DEPRECATION")
-      window.addFlags(
-        WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-        WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
-      )
+    try {
+      runOnUiThread {
+        try {
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+          } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(
+              WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+              WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+            )
+          }
+        } catch (e: Exception) {
+          e.printStackTrace()
+        }
+      }
+    } catch (e: Exception) {
+      e.printStackTrace()
     }
   }
 
   fun dismissKeyguard() {
-    runOnUiThread {
-      val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        keyguardManager?.requestDismissKeyguard(this, null)
-      } else {
-        @Suppress("DEPRECATION")
-        window.addFlags(WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD)
+    try {
+      runOnUiThread {
+        try {
+          val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            keyguardManager?.requestDismissKeyguard(this, null)
+          } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD)
+          }
+        } catch (e: Exception) {
+          e.printStackTrace()
+        }
       }
+    } catch (e: Exception) {
+      e.printStackTrace()
     }
   }
 

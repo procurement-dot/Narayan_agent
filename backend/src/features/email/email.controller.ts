@@ -4,7 +4,15 @@ import { emailService } from './email.service.js';
 export const emailController = {
   getOAuthUrl(req: Request, res: Response) {
     const userId = (req.query.userId as string) || (req as any).userId || '00000000-0000-0000-0000-000000000001';
-    const url = emailService.getOAuthUrl(userId);
+    
+    // Auto-detect production redirect URI if on Render or public server
+    const host = req.get('host') || '';
+    let redirectUri: string | undefined;
+    if (host.includes('onrender.com') || host.includes('narayan-agent') || process.env.NODE_ENV === 'production') {
+      redirectUri = `https://${host}/api/email/oauth/callback`;
+    }
+
+    const url = emailService.getOAuthUrl(userId, redirectUri);
     res.json({ url });
   },
 
@@ -18,7 +26,13 @@ export const emailController = {
     }
 
     try {
-      const account = await emailService.handleOAuthCallback(code, userId);
+      const host = req.get('host') || '';
+      let redirectUri: string | undefined;
+      if (host.includes('onrender.com') || host.includes('narayan-agent') || process.env.NODE_ENV === 'production') {
+        redirectUri = `https://${host}/api/email/oauth/callback`;
+      }
+
+      const account = await emailService.handleOAuthCallback(code, userId, redirectUri);
       const safeEmail = account?.email || 'User';
 
       res.setHeader('Cross-Origin-Opener-Policy', 'unsafe-none');
@@ -29,6 +43,7 @@ export const emailController = {
         <html>
           <head>
             <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
             <title>NRYN · Gmail Connected</title>
             <style>
               body {
@@ -41,15 +56,19 @@ export const emailController = {
                 justify-content: center;
                 height: 100vh;
                 margin: 0;
+                padding: 20px;
+                box-sizing: border-box;
               }
               .card {
                 background: #ffffff;
-                padding: 40px;
+                padding: 36px 28px;
                 border-radius: 20px;
                 box-shadow: 0 10px 30px rgba(0,0,0,0.06);
                 text-align: center;
                 max-width: 440px;
+                width: 100%;
                 border: 1px solid #e3e1d8;
+                box-sizing: border-box;
               }
               .badge {
                 display: inline-block;
@@ -67,13 +86,26 @@ export const emailController = {
               .btn {
                 background: #2b332b;
                 color: #ffffff;
-                padding: 12px 24px;
+                padding: 14px 28px;
                 border-radius: 12px;
                 text-decoration: none;
                 font-size: 14px;
-                font-weight: 500;
+                font-weight: 600;
                 display: inline-block;
                 cursor: pointer;
+                border: none;
+                width: 100%;
+                box-sizing: border-box;
+                margin-bottom: 12px;
+              }
+              .btn-secondary {
+                background: transparent;
+                color: #838883;
+                padding: 10px 20px;
+                border-radius: 10px;
+                font-size: 13px;
+                cursor: pointer;
+                border: 1px solid #e3e1d8;
               }
             </style>
           </head>
@@ -81,8 +113,9 @@ export const emailController = {
             <div class="card">
               <div class="badge">✓</div>
               <h2>Gmail Connected!</h2>
-              <p>Connected as <strong>${safeEmail}</strong>.<br/>This window will close automatically.</p>
-              <button class="btn" onclick="window.close();">Close Window ✕</button>
+              <p>Successfully linked <strong>${safeEmail}</strong> with Narayan Agent.</p>
+              <a href="nryn://email?connected=true" class="btn">Open Narayan App ➔</a>
+              <div><button class="btn-secondary" onclick="window.close();">Close Window ✕</button></div>
             </div>
             <script>
               // 1. Notify via BroadcastChannel
@@ -103,10 +136,15 @@ export const emailController = {
                 }
               } catch (e) {}
 
-              // 4. Attempt to close window immediately
-              window.close();
-              setTimeout(function() { window.close(); }, 400);
-              setTimeout(function() { window.close(); }, 1200);
+              // 4. Auto-redirect on mobile to app
+              try {
+                setTimeout(function() {
+                  window.location.href = "nryn://email?connected=true";
+                }, 600);
+              } catch (e) {}
+
+              // 5. Attempt to close popup window
+              setTimeout(function() { window.close(); }, 800);
             </script>
           </body>
         </html>
@@ -134,7 +172,8 @@ export const emailController = {
 
   async disconnectAccount(req: Request, res: Response) {
     const userId = (req as any).userId || '00000000-0000-0000-0000-000000000001';
-    const result = await emailService.disconnectAccount(userId);
+    const email = (req.body?.email as string) || (req.query?.email as string) || undefined;
+    const result = await emailService.disconnectAccount(userId, email);
     res.json(result);
   },
 
@@ -158,14 +197,16 @@ export const emailController = {
 
   async getSummary(req: Request, res: Response) {
     const userId = (req as any).userId || '00000000-0000-0000-0000-000000000001';
-    const summary = await emailService.getSummary(userId);
+    const accountEmail = req.query.accountEmail as string | undefined;
+    const summary = await emailService.getSummary(userId, accountEmail);
     res.json(summary);
   },
 
   async listEmails(req: Request, res: Response) {
     const userId = (req as any).userId || '00000000-0000-0000-0000-000000000001';
     const tab = req.query.tab as string | undefined;
-    const emails = await emailService.listEmails(userId, tab);
+    const accountEmail = req.query.accountEmail as string | undefined;
+    const emails = await emailService.listEmails(userId, tab, accountEmail);
     res.json(emails);
   },
 

@@ -1,7 +1,4 @@
-/**
- * Universal cross-platform File and Photo Picker for React Native Web & Expo.
- * Works seamlessly in Browser, Android Chrome, and Mobile without requiring native rebuilds.
- */
+import { Platform, NativeModules } from 'react-native';
 
 export interface PickedFile {
   name: string;
@@ -10,10 +7,12 @@ export interface PickedFile {
   base64: string;
 }
 
-export function pickFileOrPhoto(accept = 'image/*,application/pdf'): Promise<PickedFile | null> {
-  return new Promise((resolve) => {
-    // In Web / React Native Web environment
-    if (typeof document !== 'undefined') {
+export async function pickFileOrPhoto(accept = 'image/*,application/pdf'): Promise<PickedFile | null> {
+  const isWeb = Platform.OS === 'web';
+
+  // 1. Web / React Native Web environment
+  if (isWeb && typeof document !== 'undefined') {
+    return new Promise((resolve) => {
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = accept;
@@ -29,7 +28,6 @@ export function pickFileOrPhoto(accept = 'image/*,application/pdf'): Promise<Pic
         const reader = new FileReader();
         reader.onload = () => {
           const result = reader.result as string;
-          // Extract pure base64 or keep data URL
           const base64Content = result.includes('base64,') ? result.split('base64,')[1] : result;
           resolve({
             name: file.name,
@@ -48,9 +46,20 @@ export function pickFileOrPhoto(accept = 'image/*,application/pdf'): Promise<Pic
       setTimeout(() => {
         document.body.removeChild(input);
       }, 500);
-    } else {
-      // In native environment without DOM, return null or fallback
-      resolve(null);
+    });
+  }
+
+  // 2. Mobile Native Android / iOS environment
+  if (NativeModules.OAuthServer && typeof NativeModules.OAuthServer.pickDocument === 'function') {
+    try {
+      const res = await NativeModules.OAuthServer.pickDocument(accept);
+      if (res && res.base64) {
+        return res as PickedFile;
+      }
+    } catch (e) {
+      console.warn('[FilePicker] native pickDocument error:', e);
     }
-  });
+  }
+
+  return null;
 }

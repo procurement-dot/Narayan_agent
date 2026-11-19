@@ -132,6 +132,7 @@ export interface DiscoveredBleDevice {
   brand: string;
   rssi?: number;
   signal: string;
+  battery?: number;
 }
 
 export interface ConnectWearablePayload {

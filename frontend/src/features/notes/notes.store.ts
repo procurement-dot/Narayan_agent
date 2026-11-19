@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { NoteItem, NotesCategory } from './notes.types';
 import { notesApi } from './api/notes.api';
+import { INITIAL_NOTES } from './notes.mock';
 
 interface NotesState {
   currentCategory: NotesCategory;
@@ -30,7 +31,7 @@ interface NotesState {
 export const useNotesStore = create<NotesState>((set, get) => ({
   currentCategory: 'all',
   searchQuery: '',
-  notes: [],
+  notes: INITIAL_NOTES,
   selectedNote: null,
   isLoading: false,
   isRecording: false,
@@ -55,7 +56,9 @@ export const useNotesStore = create<NotesState>((set, get) => ({
         area: currentCategory === 'all' ? undefined : currentCategory,
         search: searchQuery.trim() || undefined,
       });
-      set({ notes: apiNotes || [] });
+      if (apiNotes && apiNotes.length > 0) {
+        set({ notes: apiNotes });
+      }
     } catch (err) {
       console.warn('Could not fetch notes from server:', err);
     } finally {

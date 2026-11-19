@@ -13,17 +13,17 @@ export const emailRepository = {
     refreshTokenEnc: string;
   }) {
     const existing = await db.queryOne(
-      'SELECT id FROM email_accounts WHERE user_id = $1 AND provider = $2',
-      [data.userId, 'gmail']
+      'SELECT id FROM email_accounts WHERE user_id = $1 AND provider = $2 AND LOWER(email) = LOWER($3)',
+      [data.userId, 'gmail', data.email]
     );
 
     if (existing) {
       return db.queryOne(
         `UPDATE email_accounts 
-         SET email = $1, refresh_token_enc = $2, status = 'connected', updated_at = NOW() 
-         WHERE id = $3 
+         SET refresh_token_enc = $1, status = 'connected', updated_at = NOW() 
+         WHERE id = $2 
          RETURNING *`,
-        [data.email, data.refreshTokenEnc, existing.id]
+        [data.refreshTokenEnc, existing.id]
       );
     }
 
@@ -60,7 +60,33 @@ export const emailRepository = {
     );
   },
 
-  async disconnectEmailAccount(userId: string) {
+  async getEmailAccounts(userId: string) {
+    return db.query(
+      `SELECT * FROM email_accounts 
+       WHERE user_id = $1 AND provider = 'gmail' AND status = 'connected' 
+       ORDER BY created_at ASC`,
+      [userId]
+    );
+  },
+
+  async disconnectEmailAccount(userId: string, email?: string) {
+    if (email) {
+      const account = await db.queryOne(
+        `SELECT id FROM email_accounts WHERE user_id = $1 AND provider = 'gmail' AND LOWER(email) = LOWER($2)`,
+        [userId, email]
+      );
+      if (account) {
+        await db.query(`DELETE FROM proposals WHERE email_id IN (SELECT id FROM emails WHERE account_id = $1)`, [account.id]);
+        await db.query(`DELETE FROM email_drafts WHERE email_id IN (SELECT id FROM emails WHERE account_id = $1)`, [account.id]);
+        await db.query(`DELETE FROM emails WHERE account_id = $1`, [account.id]);
+        return db.query(
+          `UPDATE email_accounts SET status = 'disconnected', updated_at = NOW() WHERE id = $1`,
+          [account.id]
+        );
+      }
+      return;
+    }
+
     // 1. Remove proposals tied to this account's emails
     await db.query(
       `DELETE FROM proposals WHERE email_id IN (
@@ -163,10 +189,11 @@ export const emailRepository = {
     return emailRow;
   },
 
-  async getEmails(userId: string, tab?: string) {
+  async getEmails(userId: string, tab?: string, accountEmail?: string) {
     let sql = `
       SELECT 
         e.*,
+        a.email as account_email,
         (
           SELECT d.body FROM email_drafts d 
           WHERE d.email_id = e.id AND d.user_id = $1 
@@ -182,6 +209,11 @@ export const emailRepository = {
       WHERE a.user_id = $1 AND (e.is_archived IS FALSE OR e.is_archived IS NULL)
     `;
     const params: any[] = [userId];
+
+    if (accountEmail && accountEmail !== 'all') {
+      params.push(accountEmail);
+      sql += ` AND LOWER(a.email) = LOWER($${params.length})`;
+    }
 
     if (tab === 'priority') {
       sql += ` AND e.kind != 'noise'`;
@@ -324,17 +356,22 @@ export const emailRepository = {
     return rows.map((r: any) => r.user_id);
   },
 
-  async getSummary(userId: string) {
-    const counts = await db.queryOne(
-      `SELECT 
+  async getSummary(userId: string, accountEmail?: string) {
+    let sql = `SELECT 
         COUNT(*) FILTER (WHERE e.kind = 'task' AND (e.is_archived IS FALSE OR e.is_archived IS NULL)) as requests,
         COUNT(*) FILTER (WHERE e.kind = 'noise' AND (e.is_archived IS FALSE OR e.is_archived IS NULL)) as low_signal,
         COUNT(*) FILTER (WHERE e.kind = 'meeting' AND (e.is_archived IS FALSE OR e.is_archived IS NULL)) as merged_meetings
       FROM emails e
       JOIN email_accounts a ON a.id = e.account_id
-      WHERE a.user_id = $1`,
-      [userId]
-    );
+      WHERE a.user_id = $1`;
+    const params: any[] = [userId];
+
+    if (accountEmail && accountEmail !== 'all') {
+      params.push(accountEmail);
+      sql += ` AND LOWER(a.email) = LOWER($${params.length})`;
+    }
+
+    const counts = await db.queryOne(sql, params);
 
     return {
       requests: Number(counts?.requests || 0),

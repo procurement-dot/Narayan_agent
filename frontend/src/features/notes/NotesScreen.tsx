@@ -134,8 +134,19 @@ export const NotesScreen: React.FC = () => {
       setIsVoiceOpen(false);
       setIsAnalyzing(false);
       setMeetingTitle('');
-      showToast('Meeting MoM & Tasks generated with AI!', 'success');
       selectNote(generatedNote);
+
+      // Auto-sync action items and tasks directly to the user's Calendar
+      if (generatedNote && generatedNote.id) {
+        try {
+          await syncTasksToCalendar(generatedNote.id);
+          showToast('Meeting MoM & Tasks auto-synced to Calendar!', 'success');
+        } catch (calErr) {
+          showToast('Meeting MoM generated! (Tasks saved)', 'success');
+        }
+      } else {
+        showToast('Meeting MoM & Tasks generated with AI!', 'success');
+      }
     } catch (e) {
       setIsVoiceOpen(false);
       setIsAnalyzing(false);

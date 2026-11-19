@@ -1,16 +1,21 @@
 import axios from 'axios';
+import { Platform } from 'react-native';
 import { getDeviceUserId } from '../utils/deviceUser';
 
+const isWeb = Platform.OS === 'web';
 const isLocalhost =
+  isWeb &&
   typeof window !== 'undefined' &&
+  Boolean(window.location?.hostname) &&
   (window.location.hostname === 'localhost' ||
     window.location.hostname === '127.0.0.1' ||
     window.location.hostname.startsWith('192.168.') ||
     window.location.hostname.startsWith('10.'));
 
-const defaultBaseUrl = isLocalhost
-  ? `http://${window.location.hostname}:4000/api`
-  : 'https://narayan-agent.onrender.com/api';
+const defaultBaseUrl =
+  isLocalhost && typeof window !== 'undefined' && window.location?.hostname
+    ? `http://${window.location.hostname}:4000/api`
+    : 'https://narayan-agent.onrender.com/api';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || defaultBaseUrl;
 

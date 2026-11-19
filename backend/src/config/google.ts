@@ -1,11 +1,11 @@
 import { google } from 'googleapis';
 import { env } from './env.js';
 
-export function createOAuth2Client() {
+export function createOAuth2Client(redirectUri?: string) {
   return new google.auth.OAuth2(
     env.GOOGLE_CLIENT_ID,
     env.GOOGLE_CLIENT_SECRET,
-    env.GOOGLE_REDIRECT_URI
+    redirectUri || env.GOOGLE_REDIRECT_URI
   );
 }
 

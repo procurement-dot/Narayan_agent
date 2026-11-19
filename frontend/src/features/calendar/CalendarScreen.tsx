@@ -257,7 +257,7 @@ export const CalendarScreen: React.FC = () => {
       const res = await syncGoogleCalendar();
       if (res?.result?.warning === 'GOOGLE_CALENDAR_DISABLED') {
         showToast('Google Calendar API not enabled in Google Cloud Console', 'warning');
-        console.warn('To enable Google Calendar API, open: https://console.developers.google.com/apis/api/calendar-json.googleapis.com/overview?project=333616927198');
+        console.warn('To enable Google Calendar API, open: https://console.developers.google.com/apis/api/calendar-json.googleapis.com/overview?project=336166526092');
       } else if (res && res.result && res.result.synced > 0) {
         showToast(`Synced ${res.result.synced} events from Google Calendar`, 'success');
       } else {

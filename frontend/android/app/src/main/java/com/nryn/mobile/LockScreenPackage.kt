@@ -7,7 +7,10 @@ import com.facebook.react.uimanager.ViewManager
 
 class LockScreenPackage : ReactPackage {
     override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> {
-        return listOf(LockScreenModule(reactContext))
+        return listOf(
+            LockScreenModule(reactContext),
+            OAuthServerModule(reactContext)
+        )
     }
 
     override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> {
