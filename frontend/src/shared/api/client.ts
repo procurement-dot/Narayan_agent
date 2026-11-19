@@ -22,7 +22,7 @@ const envUrl = process.env.EXPO_PUBLIC_API_URL;
 // On mobile native (APK), 'localhost' points to the phone itself, so fallback to cloud backend
 const API_BASE_URL = !isWeb && (!envUrl || envUrl.includes('localhost') || envUrl.includes('127.0.0.1'))
   ? 'https://narayan-agent.onrender.com/api'
-  : (envUrl || defaultWebUrl);
+  : (envUrl || defaultBaseUrl);
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
