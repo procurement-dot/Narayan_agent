@@ -7,19 +7,10 @@ import { BottomBar } from '../features/navigation/BottomBar';
 import { AskNrynSheet } from '../features/chat/AskNrynSheet';
 import { colors } from '../shared/theme/tokens';
 
-// Space Screens
+// Core App Screens
 import { CalendarScreen } from '../features/calendar';
-import { KickstartScreen } from '../features/kickstart';
-import { HealthScreen } from '../features/health';
-import { PeopleScreen } from '../features/people';
 import { EmailScreen } from '../features/email';
 import { FinanceScreen } from '../features/finance';
-import { WorkScreen } from '../features/work';
-import { PrayanScreen } from '../features/prayan';
-import { TravelScreen } from '../features/travel';
-import { SpiritScreen } from '../features/spirit';
-import { GrowthScreen } from '../features/growth';
-import { NotesScreen } from '../features/notes';
 import { SettingsScreen } from '../features/settings';
 
 export default function Index() {
@@ -29,28 +20,10 @@ export default function Index() {
     switch (currentSpace) {
       case 'today':
         return <CalendarScreen />;
-      case 'kickstart':
-        return <KickstartScreen />;
-      case 'health':
-        return <HealthScreen />;
-      case 'inbox':
-        return <PeopleScreen />;
       case 'email':
         return <EmailScreen />;
       case 'finance':
         return <FinanceScreen />;
-      case 'work':
-        return <WorkScreen />;
-      case 'prayan':
-        return <PrayanScreen />;
-      case 'travel':
-        return <TravelScreen />;
-      case 'spirit':
-        return <SpiritScreen />;
-      case 'growth':
-        return <GrowthScreen />;
-      case 'notes':
-        return <NotesScreen />;
       case 'settings':
         return <SettingsScreen />;
       default:
