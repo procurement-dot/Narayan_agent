@@ -3,8 +3,8 @@ import * as FileSystem from 'expo-file-system';
 
 const DEVICE_USER_ID_KEY = 'nryn_device_user_id';
 const FILE_PATH =
-  FileSystem && FileSystem.documentDirectory
-    ? `${FileSystem.documentDirectory}nryn_device_user_id.txt`
+  (FileSystem as any)?.documentDirectory
+    ? `${(FileSystem as any).documentDirectory}nryn_device_user_id.txt`
     : null;
 
 let cachedUserId: string | null = null;

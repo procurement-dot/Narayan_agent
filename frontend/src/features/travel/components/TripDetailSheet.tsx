@@ -51,7 +51,7 @@ export const TripDetailSheet: React.FC = () => {
         {selectedTrip.budgetInr > 0 && (
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Estimated Budget:</Text>
-            <Text style={styles.infoVal}>₹{selectedTrip.budgetInr.toLocaleString('en-IN')}</Text>
+            <Text style={styles.infoVal}>₹{Math.round(selectedTrip.budgetInr).toLocaleString('en-IN')}</Text>
           </View>
         )}
 
@@ -77,7 +77,7 @@ export const TripDetailSheet: React.FC = () => {
                 <Text style={styles.segPnr}>Ref / PNR: {seg.confirmationCode}</Text>
               )}
               {seg.costInr > 0 && (
-                <Text style={styles.segCost}>Cost: ₹{seg.costInr.toLocaleString('en-IN')}</Text>
+                <Text style={styles.segCost}>Cost: ₹{Math.round(seg.costInr).toLocaleString('en-IN')}</Text>
               )}
             </View>
           ))

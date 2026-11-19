@@ -9,6 +9,8 @@ import {
   CreateTripInput,
   CreateFareInput,
   CreateDocumentInput,
+  AiTravelPlanResponse,
+  GenerateAiPlanInput,
 } from './travel.types';
 import {
   FARE_ALERTS,
@@ -18,6 +20,7 @@ import {
   TRAVEL_TRIPS,
 } from './travel.mock';
 import { travelApi } from './travel.api';
+import { buildRealWorldAiPlan } from './travelRouteIntelligence';
 
 export type ModalType = 'addTrip' | 'addFare' | 'addDoc' | 'tripDetail' | null;
 
@@ -31,9 +34,13 @@ interface TravelState {
   tatkal: TatkalTask[];
   isLoading: boolean;
   activeModal: ModalType;
+  aiPlan: AiTravelPlanResponse | null;
+  isAiPlanning: boolean;
+  travelDestination: string;
 
   // Actions
   setTab: (tab: TravelTab) => void;
+  setDestination: (dest: string) => void;
   openModal: (modal: ModalType, trip?: Trip | null) => void;
   closeModal: () => void;
   loadAllData: () => Promise<void>;
@@ -43,6 +50,8 @@ interface TravelState {
   createFare: (input: CreateFareInput) => Promise<boolean>;
   deleteFare: (id: string) => Promise<boolean>;
   createDocument: (input: CreateDocumentInput) => Promise<boolean>;
+  generateAiPlan: (input: GenerateAiPlanInput) => Promise<AiTravelPlanResponse | null>;
+  clearAiPlan: () => void;
 }
 
 export const useTravelStore = create<TravelState>((set, get) => ({
@@ -55,8 +64,12 @@ export const useTravelStore = create<TravelState>((set, get) => ({
   tatkal: TATKAL_TASKS,
   isLoading: false,
   activeModal: null,
+  aiPlan: null,
+  isAiPlanning: false,
+  travelDestination: 'Mumbai',
 
   setTab: (tab) => set({ currentTab: tab }),
+  setDestination: (dest) => set({ travelDestination: dest }),
 
   openModal: (modal, trip = null) => set({ activeModal: modal, selectedTrip: trip }),
   closeModal: () => set({ activeModal: null, selectedTrip: null }),
@@ -246,4 +259,21 @@ export const useTravelStore = create<TravelState>((set, get) => ({
       return true;
     }
   },
+
+  clearAiPlan: () => set({ aiPlan: null }),
+
+  generateAiPlan: async (input) => {
+    set({ isAiPlanning: true });
+    try {
+      const plan = await travelApi.generateAiPlan(input);
+      set({ aiPlan: plan, isAiPlanning: false });
+      return plan;
+    } catch (err) {
+      console.warn('API call failed or unreachable, generating real-world route plan:', err);
+      const plan = buildRealWorldAiPlan(input);
+      set({ aiPlan: plan, isAiPlanning: false });
+      return plan;
+    }
+  },
 }));
+
