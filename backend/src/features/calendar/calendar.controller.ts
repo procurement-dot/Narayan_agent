@@ -102,4 +102,50 @@ export const calendarController = {
       res.status(err.response?.status || 500).json({ error: errorDetail });
     }
   },
+
+  async getNotifications(req: Request, res: Response) {
+    const userId = (req as any).userId || '00000000-0000-0000-0000-000000000001';
+    try {
+      const notifications = await calendarService.getNotifications(userId);
+      res.json(notifications);
+    } catch (err: any) {
+      console.error('Failed to get notifications:', err);
+      res.status(500).json({ error: err.message || 'Failed to fetch notifications' });
+    }
+  },
+
+  async getNotificationsCount(req: Request, res: Response) {
+    const userId = (req as any).userId || '00000000-0000-0000-0000-000000000001';
+    try {
+      const result = await calendarService.getNotificationsCount(userId);
+      res.json(result);
+    } catch (err: any) {
+      console.error('Failed to get notifications count:', err);
+      res.status(500).json({ count: 0, error: err.message });
+    }
+  },
+
+  async acceptNotification(req: Request, res: Response) {
+    const userId = (req as any).userId || '00000000-0000-0000-0000-000000000001';
+    const { id } = req.params;
+    try {
+      const event = await calendarService.acceptNotification(userId, id, req.body);
+      res.status(201).json({ message: 'Added to your calendar rhythm', event });
+    } catch (err: any) {
+      console.error('Failed to accept notification:', err);
+      res.status(500).json({ error: err.message || 'Failed to add to calendar' });
+    }
+  },
+
+  async dismissNotification(req: Request, res: Response) {
+    const userId = (req as any).userId || '00000000-0000-0000-0000-000000000001';
+    const { id } = req.params;
+    try {
+      const result = await calendarService.dismissNotification(userId, id);
+      res.json(result);
+    } catch (err: any) {
+      console.error('Failed to dismiss notification:', err);
+      res.status(500).json({ error: err.message || 'Failed to dismiss notification' });
+    }
+  },
 };

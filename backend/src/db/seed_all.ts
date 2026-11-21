@@ -3,6 +3,16 @@ import { db } from './db.js';
 export async function seedAllData() {
   console.log('[SeedAll] Verifying and seeding initial data across all modules...');
 
+  // 1. Ensure schema migrations for Email Unwanted Clean-up
+  try {
+    await db.query(`
+      ALTER TABLE emails ADD COLUMN IF NOT EXISTS is_unwanted BOOLEAN DEFAULT FALSE;
+      ALTER TABLE emails ADD COLUMN IF NOT EXISTS unwanted_reason TEXT;
+    `);
+  } catch (err) {
+    console.warn('[SeedAll] emails unwanted columns migration notice:', err);
+  }
+
   // Note: Calendar events are left clean (no dummy data) - real events come from Google Calendar sync, email proposals, or user creation.
 
   // 2. Seed Notes (if empty)

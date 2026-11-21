@@ -3,7 +3,9 @@ import { calendarGoogleService } from './calendar.google.js';
 import { emailRepository } from '../email/email.repository.js';
 import { gmailOAuth } from '../email/gmail.oauth.js';
 import {
+  AcceptNotificationDto,
   CalendarEventDto,
+  CalendarNotificationDto,
   CreateCalendarEventDto,
   MonthOverviewDto,
   UpdateCalendarEventDto,
@@ -251,5 +253,70 @@ export const calendarService = {
       }
       return { synced: 0 };
     }
+  },
+
+  async getNotifications(userId: string = DEFAULT_USER_ID): Promise<CalendarNotificationDto[]> {
+    const list = await calendarRepository.getPendingNotifications(userId);
+    return list;
+  },
+
+  async getNotificationsCount(userId: string = DEFAULT_USER_ID): Promise<{ count: number }> {
+    const count = await calendarRepository.getPendingNotificationsCount(userId);
+    return { count };
+  },
+
+  async acceptNotification(
+    userId: string = DEFAULT_USER_ID,
+    notificationId: string,
+    eventData: AcceptNotificationDto
+  ): Promise<CalendarEventDto> {
+    const row = await calendarRepository.acceptNotification(userId, notificationId, eventData);
+
+    // Optional Google Calendar sync if connected and requested
+    let googleEventId: string | null = null;
+    if (eventData.syncToGoogle) {
+      try {
+        const account = await emailRepository.getEmailAccount(userId);
+        if (account?.refresh_token_enc) {
+          const auth = gmailOAuth.getAuthenticatedClient(account.refresh_token_enc);
+          googleEventId = await calendarGoogleService.createEvent(auth, {
+            title: row.title,
+            detail: row.detail,
+            date: formatDateString(row.date, new Date().toISOString().split('T')[0]),
+            start: row.start_time,
+            end: row.end_time,
+          });
+          if (googleEventId) {
+            await calendarRepository.updateEvent(userId, row.id, { googleEventId } as any);
+          }
+        }
+      } catch (gErr) {
+        console.warn('[CalendarService] Failed to sync accepted notification to Google Calendar:', gErr);
+      }
+    }
+
+    return {
+      id: row.id,
+      title: row.title,
+      subtitle: row.subtitle || '',
+      start: row.start_time,
+      end: row.end_time,
+      date: formatDateString(row.date, ''),
+      cat: row.cat || 'peach',
+      kind: row.kind || 'work',
+      detail: row.detail || undefined,
+      source: row.source || 'local',
+      googleEventId: googleEventId || row.google_event_id || undefined,
+      sourceProposalId: row.source_proposal_id || undefined,
+      status: row.status || 'active',
+    };
+  },
+
+  async dismissNotification(
+    userId: string = DEFAULT_USER_ID,
+    notificationId: string
+  ): Promise<{ success: boolean; message: string }> {
+    await calendarRepository.dismissNotification(userId, notificationId);
+    return { success: true, message: 'Notification dismissed' };
   },
 };

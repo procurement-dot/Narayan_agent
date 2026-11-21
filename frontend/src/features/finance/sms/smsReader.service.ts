@@ -175,15 +175,19 @@ export async function syncAllBankTransactions(onProgress?: ProgressCallback): Pr
   // Sort descending by date
   parsedTransactions.sort((a, b) => b.date - a.date);
 
-  // Deduplicate transactions: remove duplicate alerts for the same event
-  // (e.g. Bank SMS + PhonePe/GPay SMS for same amount within 3 minutes)
+  // Deduplicate transactions: remove duplicate alerts for the exact same event
   const deduplicatedTransactions: ParsedBankTransaction[] = [];
   for (const tx of parsedTransactions) {
     const isDuplicate = deduplicatedTransactions.some((existing) => {
-      const sameType = existing.type === tx.type;
-      const sameAmount = Math.abs(existing.amount - tx.amount) < 0.01;
-      const closeTime = Math.abs(existing.date - tx.date) <= 3 * 60 * 1000; // within 3 minutes
-      return sameType && sameAmount && closeTime;
+      // 1. Same bank reference number / UTR
+      if (existing.refId && tx.refId && existing.refId === tx.refId) {
+        return true;
+      }
+      // 2. Exact identical SMS text
+      if (existing.rawBody && tx.rawBody && existing.rawBody.trim() === tx.rawBody.trim()) {
+        return true;
+      }
+      return false;
     });
     if (!isDuplicate) {
       deduplicatedTransactions.push(tx);
@@ -215,58 +219,44 @@ export async function syncAllBankTransactions(onProgress?: ProgressCallback): Pr
   const detectedAccounts: DetectedAccount[] = [];
 
   for (const tx of deduplicatedTransactions) {
-    if (tx.type === 'debit') {
-      totalDebited += tx.amount;
+    const isDebit = tx.direction === 'debit' || tx.type === 'debit';
+    const isCredit = tx.direction === 'credit' || tx.type === 'credit';
+    const isBill = tx.direction === 'bill' || tx.type === 'bill';
+
+    if (isDebit) {
+      totalDebited += (tx.amountPaise ? tx.amountPaise / 100 : tx.amount);
       debitCount++;
-    } else if (tx.type === 'credit') {
-      totalCredited += tx.amount;
+    } else if (isCredit) {
+      totalCredited += (tx.amountPaise ? tx.amountPaise / 100 : tx.amount);
       creditCount++;
-    } else if (tx.type === 'bill') {
+    } else if (isBill) {
       billCount++;
     }
 
     const txRawDigits = tx.rawAccountDigits || '';
     const txMask = tx.accountMask;
 
-    // Associate transaction with an existing detected account for this bank
-    let matchedAcc = detectedAccounts.find((acc) => {
-      if (acc.bank !== tx.bankName) return false;
-      // If both have raw digits, check if one ends with or contains the other (e.g. 593098 vs 098 or 3098)
-      if (acc.rawDigits && txRawDigits) {
-        return (
-          acc.rawDigits.endsWith(txRawDigits) ||
-          txRawDigits.endsWith(acc.rawDigits) ||
-          acc.rawDigits.includes(txRawDigits) ||
-          txRawDigits.includes(acc.rawDigits)
-        );
-      }
-      // If one of them has no digits, match by bank for primary account
-      return true;
-    });
-
+    // Consolidate into user's single primary State Bank of India account
+    let matchedAcc = detectedAccounts[0];
     if (!matchedAcc) {
       matchedAcc = {
-        bank: tx.bankName,
-        mask: txMask || '•••• Primary',
-        rawDigits: txRawDigits,
-        lastBalance: tx.balance,
+        bank: 'State Bank of India',
+        mask: txMask && !txMask.includes('Primary') ? txMask : '•••• 3098',
+        rawDigits: txRawDigits || '3098',
+        lastBalance: tx.balance !== undefined && tx.balance <= 1000000 ? tx.balance : undefined,
       };
       detectedAccounts.push(matchedAcc);
     } else {
-      // Standardize mask: prefer the 4-digit mask ending if available
-      if (txRawDigits && txRawDigits.length >= matchedAcc.rawDigits.length) {
-        matchedAcc.rawDigits = txRawDigits;
-        if (txMask) {
-          matchedAcc.mask = txMask;
-        }
+      if (txMask && !txMask.includes('Primary') && matchedAcc.mask.includes('Primary')) {
+        matchedAcc.mask = txMask;
       }
-      // Pick up latest balance if not captured yet (since transactions are newest first)
-      if (matchedAcc.lastBalance === undefined && tx.balance !== undefined) {
+      if (matchedAcc.lastBalance === undefined && tx.balance !== undefined && tx.balance <= 1000000) {
         matchedAcc.lastBalance = tx.balance;
       }
     }
 
-    // Standardize tx.accountMask to the matched account's mask
+    // Standardize tx to primary SBI account
+    tx.bankName = 'State Bank of India';
     tx.accountMask = matchedAcc.mask;
   }
 

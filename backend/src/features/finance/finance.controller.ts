@@ -118,6 +118,17 @@ export const financeController = {
     }
   },
 
+  async syncEmailCredits(req: Request, res: Response) {
+    try {
+      const userId = (req as any).userId;
+      const result = await financeService.syncEmailCredits(userId);
+      return res.json({ success: true, ...result });
+    } catch (err: any) {
+      console.error('[FinanceController] syncEmailCredits error:', err);
+      return res.status(500).json({ error: 'Failed to sync email credits' });
+    }
+  },
+
   async getTransactions(req: Request, res: Response) {
     try {
       const userId = (req as any).userId;

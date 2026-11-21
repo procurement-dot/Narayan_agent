@@ -60,6 +60,22 @@ export const emailRepository = {
     );
   },
 
+  async getEmailAccountById(id: string) {
+    return db.queryOne(
+      `SELECT * FROM email_accounts 
+       WHERE id = $1 AND provider = 'gmail' AND status = 'connected'`,
+      [id]
+    );
+  },
+
+  async getAnyConnectedAccount() {
+    return db.queryOne(
+      `SELECT * FROM email_accounts 
+       WHERE provider = 'gmail' AND status = 'connected' AND refresh_token_enc IS NOT NULL 
+       ORDER BY updated_at DESC LIMIT 1`
+    );
+  },
+
   async getEmailAccounts(userId: string) {
     return db.query(
       `SELECT * FROM email_accounts 
@@ -130,19 +146,25 @@ export const emailRepository = {
     msg: ParsedGmailMessage,
     analysis: AiAnalysisResult
   ) {
+    const isUnwanted = Boolean(analysis.isUnwanted) || analysis.kind === 'unwanted';
+    const unwantedReason = analysis.unwantedReason || (isUnwanted ? 'Promotional or automated mail' : null);
+
     // 1. Upsert Email record
     const emailRow = await db.queryOne(
       `INSERT INTO emails (
         account_id, provider_msg_id, thread_id, from_name, from_email,
-        subject, preview, content, received_at, scope, kind, confidence, draft
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        subject, preview, content, received_at, scope, kind, confidence, draft,
+        is_unwanted, unwanted_reason
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       ON CONFLICT (account_id, provider_msg_id) DO UPDATE SET
         subject = EXCLUDED.subject,
         preview = EXCLUDED.preview,
         content = EXCLUDED.content,
         kind = EXCLUDED.kind,
         confidence = EXCLUDED.confidence,
-        draft = EXCLUDED.draft
+        draft = EXCLUDED.draft,
+        is_unwanted = EXCLUDED.is_unwanted,
+        unwanted_reason = EXCLUDED.unwanted_reason
       RETURNING *`,
       [
         accountId,
@@ -158,6 +180,8 @@ export const emailRepository = {
         analysis.kind,
         analysis.confidence,
         analysis.draftReply,
+        isUnwanted,
+        unwantedReason,
       ]
     );
 
@@ -216,11 +240,13 @@ export const emailRepository = {
     }
 
     if (tab === 'priority') {
-      sql += ` AND e.kind != 'noise'`;
+      sql += ` AND e.kind != 'noise' AND (e.is_unwanted IS FALSE OR e.is_unwanted IS NULL)`;
     } else if (tab === 'meetings') {
       sql += ` AND e.kind = 'meeting'`;
     } else if (tab === 'low') {
       sql += ` AND e.kind = 'noise'`;
+    } else if (tab === 'unwanted') {
+      sql += ` AND (e.is_unwanted IS TRUE OR e.kind = 'unwanted' OR e.kind = 'noise')`;
     } else if (tab === 'drafts') {
       sql += ` AND (EXISTS (SELECT 1 FROM email_drafts d WHERE d.email_id = e.id AND d.user_id = $1) OR (e.draft IS NOT NULL AND e.draft != ''))`;
     }
@@ -356,11 +382,29 @@ export const emailRepository = {
     return rows.map((r: any) => r.user_id);
   },
 
+  async deleteEmail(id: string) {
+    if (!isUuid(id)) {
+      return { id };
+    }
+    await db.query(`DELETE FROM proposals WHERE email_id = $1`, [id]);
+    await db.query(`DELETE FROM email_drafts WHERE email_id = $1`, [id]);
+    return db.queryOne(`DELETE FROM emails WHERE id = $1 RETURNING *`, [id]);
+  },
+
+  async deleteEmails(ids: string[]) {
+    const validIds = ids.filter(isUuid);
+    if (validIds.length === 0) return [];
+    await db.query(`DELETE FROM proposals WHERE email_id = ANY($1::uuid[])`, [validIds]);
+    await db.query(`DELETE FROM email_drafts WHERE email_id = ANY($1::uuid[])`, [validIds]);
+    return db.query(`DELETE FROM emails WHERE id = ANY($1::uuid[]) RETURNING *`, [validIds]);
+  },
+
   async getSummary(userId: string, accountEmail?: string) {
     let sql = `SELECT 
         COUNT(*) FILTER (WHERE e.kind = 'task' AND (e.is_archived IS FALSE OR e.is_archived IS NULL)) as requests,
         COUNT(*) FILTER (WHERE e.kind = 'noise' AND (e.is_archived IS FALSE OR e.is_archived IS NULL)) as low_signal,
-        COUNT(*) FILTER (WHERE e.kind = 'meeting' AND (e.is_archived IS FALSE OR e.is_archived IS NULL)) as merged_meetings
+        COUNT(*) FILTER (WHERE e.kind = 'meeting' AND (e.is_archived IS FALSE OR e.is_archived IS NULL)) as merged_meetings,
+        COUNT(*) FILTER (WHERE (e.is_unwanted IS TRUE OR e.kind = 'unwanted' OR e.kind = 'noise') AND (e.is_archived IS FALSE OR e.is_archived IS NULL)) as unwanted
       FROM emails e
       JOIN email_accounts a ON a.id = e.account_id
       WHERE a.user_id = $1`;
@@ -377,6 +421,7 @@ export const emailRepository = {
       requests: Number(counts?.requests || 0),
       lowSignal: Number(counts?.low_signal || 0),
       mergedMeetings: Number(counts?.merged_meetings || 0),
+      unwanted: Number(counts?.unwanted || 0),
     };
   },
 };

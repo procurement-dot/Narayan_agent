@@ -164,6 +164,21 @@ export const gmailService = {
     });
   },
 
+  async trashEmail(auth: OAuth2Client, providerMsgId: string) {
+    const gmail = google.gmail({ version: 'v1', auth });
+    return gmail.users.messages.trash({
+      userId: 'me',
+      id: providerMsgId,
+    });
+  },
+
+  async batchTrashEmails(auth: OAuth2Client, providerMsgIds: string[]) {
+    const results = await Promise.allSettled(
+      providerMsgIds.map((id) => this.trashEmail(auth, id))
+    );
+    return results;
+  },
+
   async sendEmailReply(
     auth: OAuth2Client,
     options: {
@@ -180,16 +195,18 @@ export const gmailService = {
       ? options.subject
       : `Re: ${options.subject}`;
 
+    const cleanTo = options.to.replace(/[\r\n]/g, '').trim();
     const headers = [
-      `To: ${options.to}`,
+      `To: ${cleanTo}`,
       `Subject: =?utf-8?B?${Buffer.from(subjectLine).toString('base64')}?=`,
       'Content-Type: text/plain; charset=utf-8',
       'MIME-Version: 1.0',
     ];
 
-    if (options.inReplyTo) {
-      headers.push(`In-Reply-To: <${options.inReplyTo}>`);
-      headers.push(`References: <${options.inReplyTo}>`);
+    if (options.inReplyTo && options.inReplyTo.includes('@')) {
+      const cleanInReplyTo = options.inReplyTo.replace(/[<>\r\n]/g, '').trim();
+      headers.push(`In-Reply-To: <${cleanInReplyTo}>`);
+      headers.push(`References: <${cleanInReplyTo}>`);
     }
 
     const rawMessage = `${headers.join('\r\n')}\r\n\r\n${options.body}`;

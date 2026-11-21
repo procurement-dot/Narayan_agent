@@ -6,13 +6,15 @@ export interface EmailDto {
   time: string;
   preview: string;
   content: string;
-  kind: 'task' | 'meeting' | 'noise';
+  kind: 'task' | 'meeting' | 'noise' | 'unwanted';
   draft: string;
   source: string;
   confidence: 'High' | 'Medium' | 'Low';
   status?: string;
   proposalId?: string;
   accountEmail?: string;
+  isUnwanted?: boolean;
+  unwantedReason?: string;
 }
 
 export interface ProposalDto {
@@ -32,4 +34,5 @@ export interface EmailSummaryDto {
   requests: number;
   lowSignal: number;
   mergedMeetings: number;
+  unwanted?: number;
 }

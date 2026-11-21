@@ -30,15 +30,23 @@ export const syncSmsBatchSchema = z.object({
     z.object({
       id: z.string(),
       amount: z.number(),
+      amountPaise: z.number().optional(),
       type: z.enum(['debit', 'credit', 'bill']),
+      direction: z.enum(['debit', 'credit', 'bill']).optional(),
+      isExpense: z.boolean().optional(),
       bankName: z.string(),
       accountMask: z.string().optional(),
+      rawAccountDigits: z.string().optional(),
       merchant: z.string().optional(),
       balance: z.number().optional(),
+      balancePaise: z.number().optional(),
       dueDate: z.string().optional(),
       category: z.string().optional(),
       rawBody: z.string(),
       date: z.number(),
+      refId: z.string().optional(),
+      source: z.enum(['sms', 'email']).optional(),
+      emailId: z.string().optional(),
     })
   ),
 });

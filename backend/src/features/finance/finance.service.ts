@@ -169,7 +169,7 @@ export const financeService = {
             category: 'Accounts',
             title: `${tx.bankName} Account`,
             maskedIdentifier: tx.accountMask,
-            detail: tx.balance ? `Verified via SMS · Avl Bal ₹${Number(tx.balance).toLocaleString('en-IN')}` : 'Verified via SMS',
+            detail: tx.balance && Number(tx.balance) <= 10000000 ? `Verified via SMS · Avl Bal ₹${Number(tx.balance).toLocaleString('en-IN')}` : 'Verified via SMS',
             documentName: 'None',
           });
         }
@@ -188,16 +188,113 @@ export const financeService = {
     return raw.map((t) => ({
       id: t.id,
       amount: Number(t.amount),
+      amountPaise: t.amount_paise !== null && t.amount_paise !== undefined ? Number(t.amount_paise) : Math.round(Number(t.amount) * 100),
       type: t.type,
+      direction: t.direction || t.type,
+      isExpense: t.is_expense !== null && t.is_expense !== undefined ? Boolean(t.is_expense) : t.type === 'debit',
       bankName: t.bank_name,
       accountMask: t.account_mask,
       merchant: t.merchant,
-      balance: t.balance !== null ? Number(t.balance) : undefined,
+      balance: t.balance !== null && Number(t.balance) <= 10000000 ? Number(t.balance) : undefined,
+      balancePaise: t.balance_paise !== null && t.balance_paise !== undefined && Number(t.balance_paise) <= 1000000000 ? Number(t.balance_paise) : (t.balance !== null && Number(t.balance) <= 10000000 ? Math.round(Number(t.balance) * 100) : undefined),
       dueDate: t.due_date,
       category: t.category,
       rawBody: t.raw_body,
       date: Number(t.date),
+      refId: t.ref_id,
+      source: (t.source as any) || 'sms',
+      emailId: t.email_id || undefined,
     }));
+  },
+
+  async syncEmailCredits(userId: string | undefined) {
+    const rawEmails = await financeRepository.getPotentialCreditEmails(userId);
+    const existingTxs = await financeRepository.getTransactions(userId, 'credit', 200);
+
+    const emailCredits: any[] = [];
+
+    const PROMO_DROP_REGEX =
+      /\b(?:pre-?approved|loan offer|apply now|avail loan|congratulations you are eligible|credit card offer|flat \d+% off)\b/i;
+    const OTP_DROP_REGEX =
+      /(?:is your otp|otp is|use otp|valid for \d+ min|one-time password)/i;
+    const RUPEE_AMOUNT_REGEX =
+      /(?:rs\.?|inr|₹|रु\.?)\s*([\d,]+(?:\.\d{1,2})?)|\b(?:credited|credit|deposited|salary)\s+(?:by|for|of)?\s*(?:rs\.?|inr|₹|रु\.?)?\s*([\d,]+(?:\.\d{1,2})?)/i;
+
+    for (const em of rawEmails) {
+      const fullText = `${em.subject || ''} ${em.preview || ''} ${em.content || ''}`;
+
+      // Gate 1: Anti-Spam / Anti-Promo & Anti-OTP
+      if (PROMO_DROP_REGEX.test(fullText) || OTP_DROP_REGEX.test(fullText)) {
+        continue;
+      }
+
+      // Gate 2: Amount Detection
+      const amtMatch = fullText.match(RUPEE_AMOUNT_REGEX);
+      if (!amtMatch) continue;
+
+      const rawNumStr = (amtMatch[1] || amtMatch[2] || '').replace(/,/g, '');
+      const numVal = parseFloat(rawNumStr);
+      if (isNaN(numVal) || numVal <= 0) continue;
+
+      // Filter out small test or non-credit figures (< ₹50) or absurdly large (> 1 Cr)
+      if (numVal < 50 || numVal > 10000000) continue;
+
+      const amountPaise = Math.round(numVal * 100);
+
+      // Gate 3: Direction & Category
+      const isSalary = /\b(?:salary|payroll|stipend|pension)\b/i.test(fullText);
+      const category = isSalary ? 'salary' : 'income';
+
+      // Date
+      const dateMs = em.received_at ? new Date(em.received_at).getTime() : Date.now();
+
+      // Deduplication check: Has this exact credit already been recorded in SMS within 24h?
+      const isAlreadyInSms = existingTxs.some((tx) => {
+        const sameAmount =
+          (tx.amount_paise && Number(tx.amount_paise) === amountPaise) ||
+          Math.abs(Number(tx.amount) - numVal) < 0.01;
+        const closeDate = Math.abs(Number(tx.date) - dateMs) <= 24 * 60 * 60 * 1000;
+        return sameAmount && closeDate;
+      });
+
+      if (isAlreadyInSms) {
+        continue;
+      }
+
+      let merchant = em.from_name || 'Employer Payroll';
+      if (merchant.includes('<')) {
+        merchant = merchant.split('<')[0].trim();
+      }
+
+      emailCredits.push({
+        id: `email-credit-${em.id}`,
+        amount: numVal,
+        amountPaise,
+        type: 'credit',
+        direction: 'credit',
+        isExpense: false,
+        bankName: 'State Bank of India',
+        accountMask: '•••• 3098',
+        merchant: isSalary ? `${merchant} (Salary)` : merchant,
+        balance: undefined,
+        dueDate: undefined,
+        category,
+        rawBody: `[Email Inflow Alert] ${em.subject}: ${em.preview || em.content || ''}`.slice(0, 300),
+        date: dateMs,
+        refId: em.id,
+        source: 'email',
+        emailId: em.id,
+      });
+    }
+
+    if (emailCredits.length > 0) {
+      await financeRepository.upsertTransactionsBatch(userId, emailCredits);
+    }
+
+    return {
+      syncedCount: emailCredits.length,
+      credits: emailCredits,
+    };
   },
 
   async getRetirementParams(userId?: string) {

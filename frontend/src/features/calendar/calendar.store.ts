@@ -1,12 +1,14 @@
 import { create } from 'zustand';
 import {
   CalendarEvent,
+  CalendarNotificationItem,
   CreateCalendarEventPayload,
   DayMode,
   MonthOverview,
   UpdateCalendarEventPayload,
 } from './calendar.types';
 import { calendarApi } from './calendar.api';
+import { INITIAL_CALENDAR_EVENTS, INITIAL_CALENDAR_NOTIFICATIONS } from './calendar.mock';
 
 function getTodayString(): string {
   const d = new Date();
@@ -28,6 +30,12 @@ interface CalendarState {
   isAddTaskOpen: boolean;
   selectedEvent: CalendarEvent | null;
 
+  // Notifications State
+  notifications: CalendarNotificationItem[];
+  unreadNotificationsCount: number;
+  isNotificationsOpen: boolean;
+  isLoadingNotifications: boolean;
+
   // Setters
   setMode: (mode: DayMode) => void;
   setDayOffset: (offset: number) => void;
@@ -36,10 +44,16 @@ interface CalendarState {
   openAddTask: () => void;
   closeAddTask: () => void;
   selectEvent: (event: CalendarEvent | null) => void;
+  openNotifications: () => void;
+  closeNotifications: () => void;
 
   // API Actions
   fetchDayEvents: (dateStr?: string) => Promise<void>;
   fetchMonthOverview: (year?: number, month?: number) => Promise<void>;
+  fetchNotifications: () => Promise<void>;
+  fetchNotificationsCount: () => Promise<void>;
+  acceptNotification: (notif: CalendarNotificationItem) => Promise<void>;
+  dismissNotification: (id: string) => Promise<void>;
   addEvent: (payload: CreateCalendarEventPayload) => Promise<void>;
   updateEvent: (id: string, payload: UpdateCalendarEventPayload) => Promise<void>;
   deleteEvent: (id: string) => Promise<void>;
@@ -47,7 +61,7 @@ interface CalendarState {
 }
 
 export const useCalendarStore = create<CalendarState>((set, get) => ({
-  events: [],
+  events: INITIAL_CALENDAR_EVENTS,
   mode: 'timeline',
   dayOffset: 0,
   selectedDate: getTodayString(),
@@ -60,6 +74,11 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
   isSyncing: false,
   isAddTaskOpen: false,
   selectedEvent: null,
+
+  notifications: INITIAL_CALENDAR_NOTIFICATIONS,
+  unreadNotificationsCount: INITIAL_CALENDAR_NOTIFICATIONS.length,
+  isNotificationsOpen: false,
+  isLoadingNotifications: false,
 
   setMode: (mode) => set({ mode }),
   setDayOffset: (dayOffset) => set({ dayOffset }),
@@ -74,20 +93,29 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
   openAddTask: () => set({ isAddTaskOpen: true }),
   closeAddTask: () => set({ isAddTaskOpen: false }),
   selectEvent: (selectedEvent) => set({ selectedEvent }),
+  openNotifications: () => {
+    set({ isNotificationsOpen: true });
+    get().fetchNotifications();
+  },
+  closeNotifications: () => set({ isNotificationsOpen: false }),
 
   fetchDayEvents: async (dateStr) => {
     const targetDate = dateStr || get().selectedDate;
     try {
       set({ isLoading: true });
       const data = await calendarApi.getDayEvents(targetDate);
-      if (Array.isArray(data)) {
+      if (Array.isArray(data) && data.length > 0) {
         set({ events: data });
       } else {
-        set({ events: [] });
+        set((state) => ({
+          events: state.events && state.events.length > 0 ? state.events : INITIAL_CALENDAR_EVENTS,
+        }));
       }
     } catch (err) {
       console.warn('[CalendarStore] Could not fetch live events from backend:', err);
-      set({ events: [] });
+      set((state) => ({
+        events: state.events && state.events.length > 0 ? state.events : INITIAL_CALENDAR_EVENTS,
+      }));
     } finally {
       set({ isLoading: false });
     }
@@ -101,6 +129,112 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
       set({ monthOverview: overview });
     } catch (err) {
       console.warn('[CalendarStore] Could not fetch month overview:', err);
+    }
+  },
+
+  fetchNotifications: async () => {
+    try {
+      set({ isLoadingNotifications: true });
+      const data = await calendarApi.getNotifications();
+      if (Array.isArray(data) && data.length > 0) {
+        set({ notifications: data, unreadNotificationsCount: data.length });
+      } else {
+        set((state) => ({
+          notifications: state.notifications.length > 0 ? state.notifications : INITIAL_CALENDAR_NOTIFICATIONS,
+          unreadNotificationsCount: state.notifications.length > 0 ? state.notifications.length : INITIAL_CALENDAR_NOTIFICATIONS.length,
+        }));
+      }
+    } catch (err) {
+      console.warn('[CalendarStore] Could not fetch live notifications from backend:', err);
+      set((state) => ({
+        notifications: state.notifications.length > 0 ? state.notifications : INITIAL_CALENDAR_NOTIFICATIONS,
+        unreadNotificationsCount: state.notifications.length > 0 ? state.notifications.length : INITIAL_CALENDAR_NOTIFICATIONS.length,
+      }));
+    } finally {
+      set({ isLoadingNotifications: false });
+    }
+  },
+
+  fetchNotificationsCount: async () => {
+    try {
+      const res = await calendarApi.getNotificationsCount();
+      if (typeof res?.count === 'number') {
+        set({ unreadNotificationsCount: res.count });
+      }
+    } catch {
+      // ignore
+    }
+  },
+
+  acceptNotification: async (notif: CalendarNotificationItem) => {
+    const id = notif.id;
+    // 1. Optimistic removal from notifications
+    set((state) => {
+      const filtered = state.notifications.filter((n) => n.id !== id);
+      return {
+        notifications: filtered,
+        unreadNotificationsCount: Math.max(0, filtered.length),
+      };
+    });
+
+    // 2. Optimistic add to events
+    const tempEvent: CalendarEvent = {
+      id: `accepted-${Date.now()}`,
+      title: notif.title,
+      subtitle: notif.subtitle,
+      start: notif.startTime,
+      end: notif.endTime,
+      date: notif.date || get().selectedDate,
+      cat: notif.type === 'meeting' ? 'peach' : (notif.type === 'bill' ? 'peach' : 'purple'),
+      kind: notif.type === 'bill' ? 'finance' : 'work',
+      detail: notif.detail,
+      source: notif.source,
+      status: 'active',
+    };
+
+    set((state) => ({
+      events: [...state.events, tempEvent].sort((a, b) => a.start.localeCompare(b.start)),
+    }));
+
+    try {
+      const res = await calendarApi.acceptNotification(id, {
+        title: notif.title,
+        subtitle: notif.subtitle,
+        start: notif.startTime,
+        end: notif.endTime,
+        date: notif.date || get().selectedDate,
+        detail: notif.detail,
+        cat: tempEvent.cat,
+        kind: tempEvent.kind,
+        syncToGoogle: true,
+      });
+
+      if (res?.event) {
+        set((state) => ({
+          events: state.events.map((e) => (e.id === tempEvent.id ? res.event : e)),
+        }));
+      }
+      get().fetchDayEvents();
+      get().fetchMonthOverview();
+    } catch (err) {
+      console.error('[CalendarStore] Failed to accept notification on backend:', err);
+    }
+  },
+
+  dismissNotification: async (id: string) => {
+    // 1. Optimistic removal from notifications
+    set((state) => {
+      const filtered = state.notifications.filter((n) => n.id !== id);
+      return {
+        notifications: filtered,
+        unreadNotificationsCount: Math.max(0, filtered.length),
+      };
+    });
+
+    try {
+      await calendarApi.dismissNotification(id);
+    } catch (err) {
+      console.error('[CalendarStore] Failed to dismiss notification on backend:', err);
     }
   },
 

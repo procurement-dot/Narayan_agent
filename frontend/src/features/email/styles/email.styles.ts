@@ -112,6 +112,22 @@ export const emailStyles = StyleSheet.create({
     marginTop: 5,
     fontFamily: FONTS.regular,
   },
+  accountBadge: {
+    backgroundColor: '#edf4ee',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: '#cde0d2',
+    marginRight: 6,
+    alignSelf: 'center',
+  },
+  accountBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: '#284e31',
+    textTransform: 'lowercase',
+  },
   openBtn: {
     paddingVertical: 4,
     paddingHorizontal: 6,

@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { colors, radii, spacing, typography } from '../../../shared/theme/tokens';
 import { useEmailUiStore } from '../store/emailUi.store';
@@ -185,9 +186,9 @@ export const EmailConnectionBar: React.FC = () => {
         <View style={styles.multiHeaderLeft}>
           <View style={styles.statusDot} />
           <Text style={styles.multiHeaderTitle}>
-            Connected Accounts ({accounts.length}/2)
+            Connected Accounts ({accounts.length} Active)
           </Text>
-          <Text style={styles.scopeBadge}>LIVE SYNC</Text>
+          <Text style={styles.scopeBadge}>MULTI-INBOX SYNC</Text>
         </View>
 
         <TouchableOpacity
@@ -210,8 +211,12 @@ export const EmailConnectionBar: React.FC = () => {
       {/* Account items list */}
       <View style={styles.accountList}>
         {accounts.map((acc, index) => {
-          const isPrimary = index === 0;
-          const roleLabel = isPrimary ? 'Personal / Primary' : 'Work / Secondary';
+          const roleLabel =
+            index === 0
+              ? 'Primary Inbox'
+              : index === 1
+              ? 'Secondary Inbox'
+              : `Inbox #${index + 1}`;
           const isSelected = selectedAccountEmail.toLowerCase() === acc.email.toLowerCase();
 
           return (
@@ -222,8 +227,14 @@ export const EmailConnectionBar: React.FC = () => {
               activeOpacity={0.8}
             >
               <View style={styles.accountCardLeft}>
-                <View style={[styles.accountOrb, !isPrimary && styles.accountOrbWork, isSelected && styles.accountOrbActive]}>
-                  <Text style={styles.accountOrbText}>{isPrimary ? '1' : '2'}</Text>
+                <View
+                  style={[
+                    styles.accountOrb,
+                    index > 0 && styles.accountOrbWork,
+                    isSelected && styles.accountOrbActive,
+                  ]}
+                >
+                  <Text style={styles.accountOrbText}>{index + 1}</Text>
                 </View>
                 <View style={styles.accountTextCol}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -236,7 +247,10 @@ export const EmailConnectionBar: React.FC = () => {
                       <Text style={styles.tapToViewText}>Tap to view ➔</Text>
                     )}
                   </View>
-                  <Text style={[styles.accountEmailText, isSelected && styles.accountEmailTextSelected]} numberOfLines={1}>
+                  <Text
+                    style={[styles.accountEmailText, isSelected && styles.accountEmailTextSelected]}
+                    numberOfLines={1}
+                  >
                     {acc.email}
                   </Text>
                 </View>
@@ -260,22 +274,32 @@ export const EmailConnectionBar: React.FC = () => {
 
       {/* Quick filter pills switcher */}
       {accounts.length > 1 && (
-        <View style={styles.filterPillsRow}>
-          <Text style={styles.filterPillLabel}>Viewing:</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterPillsRow}
+        >
+          <Text style={styles.filterPillLabel}>Filter:</Text>
           <TouchableOpacity
             style={[styles.filterPill, selectedAccountEmail === 'all' && styles.filterPillActive]}
             onPress={() => setSelectedAccountEmail('all')}
             activeOpacity={0.7}
           >
-            <Text style={[styles.filterPillText, selectedAccountEmail === 'all' && styles.filterPillTextActive]}>
+            <Text
+              style={[
+                styles.filterPillText,
+                selectedAccountEmail === 'all' && styles.filterPillTextActive,
+              ]}
+            >
               All Inboxes ({accounts.length})
             </Text>
           </TouchableOpacity>
 
           {accounts.map((acc, idx) => {
             const isActive = selectedAccountEmail.toLowerCase() === acc.email.toLowerCase();
-            const prefix = idx === 0 ? 'Personal' : 'Work';
             const shortName = acc.email.split('@')[0];
+            const domain = acc.email.split('@')[1]?.split('.')[0] || '';
+            const pillLabel = idx === 0 ? `Primary: ${shortName}` : `${shortName}@${domain}`;
 
             return (
               <TouchableOpacity
@@ -284,62 +308,67 @@ export const EmailConnectionBar: React.FC = () => {
                 onPress={() => setSelectedAccountEmail(isActive ? 'all' : acc.email)}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.filterPillText, isActive && styles.filterPillTextActive]} numberOfLines={1}>
-                  {prefix}: {shortName}
+                <Text
+                  style={[styles.filterPillText, isActive && styles.filterPillTextActive]}
+                  numberOfLines={1}
+                >
+                  {pillLabel}
                 </Text>
               </TouchableOpacity>
             );
           })}
-        </View>
+        </ScrollView>
       )}
 
-      {/* Add second account action if < 2 */}
-      {accounts.length < 2 && (
-        <View style={styles.addAccountSection}>
-          <TouchableOpacity
-            style={[styles.addAccountButton, isOpeningLogin && { opacity: 0.75 }]}
-            onPress={handleConnect}
-            disabled={isOpeningLogin}
-            activeOpacity={0.7}
-          >
-            {isOpeningLogin ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <ActivityIndicator size="small" color="#223b28" />
-                <Text style={styles.addAccountButtonText}>Opening Google...</Text>
-              </View>
-            ) : (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Text style={styles.addAccountPlus}>＋</Text>
-                <Text style={styles.addAccountButtonText}>
-                  Add Second Email (Work / Personal)
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Manual paste toggle for 2nd account */}
-      {accounts.length < 2 && (
+      {/* Add another email account action (Unlimited Multiple Accounts) */}
+      <View style={styles.addAccountSection}>
         <TouchableOpacity
-          onPress={() => setShowManual(!showManual)}
-          style={{ alignSelf: 'center', marginTop: 6 }}
+          style={[styles.addAccountButton, isOpeningLogin && { opacity: 0.75 }]}
+          onPress={handleConnect}
+          disabled={isOpeningLogin}
+          activeOpacity={0.7}
         >
-          <Text style={{ fontSize: 11, color: colors.accentDark || '#ae613f', textDecorationLine: 'underline' }}>
-            {showManual ? 'Hide link paste' : 'Paste link for 2nd email?'}
-          </Text>
+          {isOpeningLogin ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <ActivityIndicator size="small" color="#223b28" />
+              <Text style={styles.addAccountButtonText}>Opening Google...</Text>
+            </View>
+          ) : (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={styles.addAccountPlus}>＋</Text>
+              <Text style={styles.addAccountButtonText}>
+                Add Another Email Account (Gmail / Workspace)
+              </Text>
+            </View>
+          )}
         </TouchableOpacity>
-      )}
+      </View>
+
+      {/* Manual paste toggle for additional accounts */}
+      <TouchableOpacity
+        onPress={() => setShowManual(!showManual)}
+        style={{ alignSelf: 'center', marginTop: 8 }}
+      >
+        <Text
+          style={{
+            fontSize: 11,
+            color: colors.accentDark || '#ae613f',
+            textDecorationLine: 'underline',
+          }}
+        >
+          {showManual ? 'Hide link paste' : 'Paste verification link from Chrome?'}
+        </Text>
+      </TouchableOpacity>
 
       {showManual && (
         <View style={[styles.manualBox, { marginTop: 8 }]}>
           <Text style={styles.manualLabel}>
-            दुसऱ्या ईमेलची Chrome मध्ये आलेली लिंक (किंवा code) खाली पेस्ट करा:
+            Chrome मध्ये आलेली लिंक (किंवा code) खाली पेस्ट करा:
           </Text>
           <View style={styles.manualRow}>
             <TextInput
               style={styles.manualInput}
-              placeholder="Paste callback URL with code for 2nd email..."
+              placeholder="Paste callback URL with code for new email..."
               placeholderTextColor="#999"
               value={manualInput}
               onChangeText={setManualInput}

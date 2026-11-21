@@ -18,8 +18,8 @@ export const gmailOAuth = {
     const candidates = Array.from(
       new Set(
         [
-          'https://narayan-agent.onrender.com/api/email/oauth/callback',
           redirectUri,
+          'https://narayan-agent.onrender.com/api/email/oauth/callback',
           'http://localhost:4000/api/email/oauth/callback',
         ].filter(Boolean) as string[]
       )
@@ -44,13 +44,9 @@ export const gmailOAuth = {
           throw new Error('Unable to retrieve email from Google OAuth profile');
         }
 
-        if (!tokens.refresh_token) {
-          throw new Error(
-            'Google did not return a refresh token. Make sure prompt="consent" is set.'
-          );
-        }
-
-        const refreshTokenEnc = encryptToken(tokens.refresh_token);
+        const refreshTokenEnc = tokens.refresh_token
+          ? encryptToken(tokens.refresh_token)
+          : '';
 
         return {
           email,

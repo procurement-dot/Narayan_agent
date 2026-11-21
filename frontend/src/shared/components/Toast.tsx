@@ -65,8 +65,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
     shadowRadius: 8,
-    elevation: 6,
-    zIndex: 9999,
+    elevation: 999,
+    zIndex: 999999,
     alignItems: 'center',
   },
   toastText: {

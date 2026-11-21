@@ -17,6 +17,7 @@ import { ProposalSheet } from '../components/ProposalSheet';
 import { SourceActionsCard } from '../components/SourceActionsCard';
 import { TrustFooter } from '../components/TrustFooter';
 import { EmailConnectionBar } from '../components/EmailConnectionBar';
+import { UnwantedCleanUpBanner } from '../components/UnwantedCleanUpBanner';
 
 export const EmailScreen: React.FC = () => {
   const { showToast } = useToast();
@@ -47,6 +48,9 @@ export const EmailScreen: React.FC = () => {
     isConnected,
     selectedAccountEmail,
     setSelectedAccountEmail,
+    selectedUnwantedIds,
+    toggleSelectUnwanted,
+    trashEmail,
   } = useEmailUiStore();
 
   // Load initial data and run real-time auto-sync
@@ -179,6 +183,7 @@ export const EmailScreen: React.FC = () => {
       showToast(res.message || 'Reply sent successfully!', 'success');
     } catch (err: any) {
       showToast(err.message || 'Failed to send reply', 'warning');
+      throw err;
     }
   };
 
@@ -297,6 +302,14 @@ export const EmailScreen: React.FC = () => {
           </View>
         )}
 
+        {/* AI Clean-up Banner for Unwanted Tab */}
+        {mailTab === 'unwanted' && (
+          <UnwantedCleanUpBanner
+            unwantedCount={displayedEmails.length}
+            allUnwantedIds={displayedEmails.map((e) => e.id)}
+          />
+        )}
+
         {/* Email Rows List Card */}
         <Card>
           {displayedEmails.length > 0 ? (
@@ -307,6 +320,9 @@ export const EmailScreen: React.FC = () => {
                 statusOverride={mailStatus[email.id]}
                 isLast={index === displayedEmails.length - 1}
                 onOpen={() => openEmail(email.id)}
+                isSelectable={mailTab === 'unwanted'}
+                isSelected={selectedUnwantedIds.includes(email.id)}
+                onToggleSelect={() => toggleSelectUnwanted(email.id)}
               />
             ))
           ) : (
@@ -316,6 +332,8 @@ export const EmailScreen: React.FC = () => {
                   ? 'No action-required requests found in your recent emails. Tap "All email" or "Low signal" above to see all synced messages.'
                   : mailTab === 'meetings'
                   ? 'No meeting requests found. Tap "All email" to view all synced messages.'
+                  : mailTab === 'unwanted'
+                  ? '🎉 No unwanted emails found! Your inbox is completely clean and clutter-free.'
                   : 'Nothing in this view.'}
               </Text>
             </View>
@@ -339,6 +357,12 @@ export const EmailScreen: React.FC = () => {
         onSendReply={handleSendReply}
         onGenerateDraft={handleGenerateDraft}
         onArchive={handleArchive}
+        onTrash={async (emailId) => {
+          openEmail(null);
+          showToast('Moving email to Gmail Trash...', 'info');
+          await trashEmail(emailId);
+          showToast('Email moved to Trash!', 'success');
+        }}
         onReviewAction={handleReviewActionFromMail}
       />
 

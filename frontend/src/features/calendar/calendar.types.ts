@@ -6,7 +6,8 @@ export type CalendarEventSource =
   | 'notes_mom'
   | 'notes_action'
   | 'health_event'
-  | 'work_task';
+  | 'work_task'
+  | 'finance_bill';
 
 export interface CalendarEvent {
   id: string;
@@ -56,4 +57,23 @@ export interface UpdateCalendarEventPayload {
   kind?: 'health' | 'assistant' | 'work' | 'spirit' | 'finance' | 'people';
   detail?: string;
   status?: 'active' | 'completed' | 'cancelled';
+}
+
+export interface CalendarNotificationItem {
+  id: string; // e.g. 'prop-uuid' or 'email-mtg-uuid'
+  rawId?: string;
+  source: CalendarEventSource;
+  module: 'email' | 'notes' | 'finance' | 'general';
+  type: 'meeting' | 'task' | 'bill';
+  title: string;
+  subtitle: string;
+  detail: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  evidence?: string;
+  sender?: string;
+  status: 'pending';
+  amount?: number;
+  createdAt?: string;
 }

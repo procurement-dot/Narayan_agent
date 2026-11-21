@@ -6,18 +6,21 @@ export const EMAIL_TABS: readonly { id: EmailTab; label: string }[] = [
   { id: 'all', label: 'All email' },
   { id: 'low', label: 'Low signal' },
   { id: 'drafts', label: 'Drafts' },
+  { id: 'unwanted', label: 'Unwanted' },
 ] as const;
 
 export const KIND_ICONS = {
   task: '✉',
   meeting: '▦',
   noise: '◌',
+  unwanted: '🗑',
 } as const;
 
 export const KIND_LABELS = {
   task: 'Action candidate',
   meeting: 'Meeting candidate',
   noise: 'Low priority',
+  unwanted: 'Unwanted promotional',
 } as const;
 
 export const TOASTS = {

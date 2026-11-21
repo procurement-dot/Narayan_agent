@@ -57,6 +57,8 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
 
           <ScrollView
             showsVerticalScrollIndicator={false}
+            style={{ flexShrink: 1 }}
+            keyboardShouldPersistTaps="handled"
             contentContainerStyle={styles.body}
           >
             {children}
@@ -92,6 +94,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 40,
     elevation: 20,
+    zIndex: 10,
   },
   handle: {
     height: 4,

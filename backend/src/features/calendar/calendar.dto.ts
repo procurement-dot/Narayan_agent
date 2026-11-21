@@ -6,7 +6,8 @@ export type CalendarEventSource =
   | 'notes_mom'
   | 'notes_action'
   | 'health_event'
-  | 'work_task';
+  | 'work_task'
+  | 'finance_bill';
 
 export interface CalendarEventDto {
   id: string;
@@ -53,4 +54,35 @@ export interface MonthOverviewDto {
   month: number; // 1 - 12
   dots: Record<string, number>; // { '2026-11-02': 4, '2026-11-04': 1 }
   totalEvents: number;
+}
+
+export interface CalendarNotificationDto {
+  id: string;
+  rawId: string;
+  source: CalendarEventSource;
+  module: 'email' | 'notes' | 'finance' | 'general';
+  type: 'meeting' | 'task' | 'bill';
+  title: string;
+  subtitle: string;
+  detail: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  evidence?: string;
+  sender?: string;
+  status: 'pending';
+  amount?: number;
+  createdAt?: string;
+}
+
+export interface AcceptNotificationDto {
+  title?: string;
+  subtitle?: string;
+  date?: string;
+  start?: string;
+  end?: string;
+  detail?: string;
+  cat?: 'green' | 'gray' | 'peach' | 'purple';
+  kind?: 'health' | 'assistant' | 'work' | 'spirit' | 'finance' | 'people';
+  syncToGoogle?: boolean;
 }

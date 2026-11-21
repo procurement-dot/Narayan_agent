@@ -41,6 +41,7 @@ export const emailApi = {
       const scopes = [
         'https://www.googleapis.com/auth/gmail.readonly',
         'https://www.googleapis.com/auth/gmail.compose',
+        'https://www.googleapis.com/auth/gmail.send',
         'https://www.googleapis.com/auth/gmail.modify',
         'https://www.googleapis.com/auth/userinfo.email',
         'https://www.googleapis.com/auth/userinfo.profile',
@@ -141,6 +142,30 @@ export const emailApi = {
 
   async archiveEmail(emailId: string) {
     const res = await apiClient.post(`/email/${emailId}/archive`);
+    return res.data;
+  },
+
+  async trashEmail(emailId: string): Promise<{ success: boolean; message: string }> {
+    const res = await apiClient.post<{ success: boolean; message: string }>(
+      `/email/${emailId}/trash`
+    );
+    return res.data;
+  },
+
+  async batchTrashEmails(
+    emailIds: string[]
+  ): Promise<{ success: boolean; deletedCount: number; message: string }> {
+    const res = await apiClient.post<{ success: boolean; deletedCount: number; message: string }>(
+      '/email/batch-trash',
+      { emailIds }
+    );
+    return res.data;
+  },
+
+  async scanUnwanted(): Promise<{ success: boolean; taggedCount: number }> {
+    const res = await apiClient.post<{ success: boolean; taggedCount: number }>(
+      '/email/scan-unwanted'
+    );
     return res.data;
   },
 

@@ -6,6 +6,8 @@ import {
   TouchableOpacity,
   View,
   ActivityIndicator,
+  Alert,
+  Platform,
 } from 'react-native';
 import { BottomSheet } from '../../../shared/components/BottomSheet';
 import { TOKENS } from '../../../shared/theme/tokens';
@@ -21,6 +23,7 @@ interface EmailDetailSheetProps {
   onSendReply: (emailId: string, draft: string) => Promise<void>;
   onGenerateDraft: (emailId: string) => Promise<string>;
   onArchive: (emailId: string) => void;
+  onTrash?: (emailId: string) => void;
   onReviewAction?: (emailId: string) => void;
 }
 
@@ -33,15 +36,18 @@ export const EmailDetailSheet: React.FC<EmailDetailSheetProps> = ({
   onSendReply,
   onGenerateDraft,
   onArchive,
+  onTrash,
   onReviewAction,
 }) => {
   const [draftText, setDraftText] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!email) return;
 
+    setSendError(null);
     const existingDraft = (savedDraft && savedDraft.trim()) || (email.draft && email.draft.trim()) || '';
     if (existingDraft) {
       setDraftText(existingDraft);
@@ -89,8 +95,11 @@ export const EmailDetailSheet: React.FC<EmailDetailSheetProps> = ({
   const handleSend = async () => {
     if (!draftText.trim() || isSending) return;
     try {
+      setSendError(null);
       setIsSending(true);
       await onSendReply(email.id, draftText);
+    } catch (err: any) {
+      setSendError(err.message || 'Unable to send reply. Please try again.');
     } finally {
       setIsSending(false);
     }
@@ -98,6 +107,38 @@ export const EmailDetailSheet: React.FC<EmailDetailSheetProps> = ({
 
   const footerButtons = (
     <View style={styles.footerContainer}>
+      {onTrash && (
+        <TouchableOpacity
+          style={styles.deleteBtn}
+          onPress={() => {
+            if (Platform.OS === 'web') {
+              const ok = typeof window !== 'undefined'
+                ? window.confirm('Are you sure you want to move this email to Gmail Trash?')
+                : true;
+              if (ok) {
+                onTrash(email.id);
+              }
+              return;
+            }
+            Alert.alert(
+              'Delete Email?',
+              'Are you sure you want to move this email to Gmail Trash?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Delete',
+                  style: 'destructive',
+                  onPress: () => onTrash(email.id),
+                },
+              ]
+            );
+          }}
+          disabled={isSending || isGenerating}
+        >
+          <Text style={styles.deleteBtnText}>Delete 🗑</Text>
+        </TouchableOpacity>
+      )}
+
       <TouchableOpacity
         style={styles.archiveBtn}
         onPress={() => onArchive(email.id)}
@@ -149,8 +190,18 @@ export const EmailDetailSheet: React.FC<EmailDetailSheetProps> = ({
       onClose={onClose}
       footer={footerButtons}
     >
+      {email.unwantedReason && (
+        <View style={styles.unwantedCard}>
+          <Text style={styles.unwantedTitle}>⚠️ AI Detected as Unwanted</Text>
+          <Text style={styles.unwantedDesc}>
+            {email.unwantedReason}. You can delete this email to keep your inbox clean.
+          </Text>
+        </View>
+      )}
+
       <Text style={styles.kicker}>
         {email.name.toUpperCase()} · {email.time} · {email.source}
+        {email.accountEmail ? ` · INBOX: ${email.accountEmail}` : ''}
       </Text>
 
       <Text style={styles.content}>{email.content}</Text>
@@ -173,7 +224,14 @@ export const EmailDetailSheet: React.FC<EmailDetailSheetProps> = ({
       {/* Draft Reply Area */}
       <View style={styles.replyBoxContainer}>
         <View style={styles.replyHeaderRow}>
-          <Text style={styles.replyLabel}>Editable reply — never auto-sent</Text>
+          <View style={{ flex: 1, marginRight: 8 }}>
+            <Text style={styles.replyLabel}>Editable reply — never auto-sent</Text>
+            {email.accountEmail && (
+              <Text style={{ fontSize: 10, color: '#68776b', marginTop: 1 }}>
+                From: <Text style={{ fontWeight: '600', color: '#274b31' }}>{email.accountEmail}</Text>
+              </Text>
+            )}
+          </View>
           <TouchableOpacity
             style={styles.aiDraftBtn}
             onPress={handleManualGenerate}
@@ -217,6 +275,12 @@ export const EmailDetailSheet: React.FC<EmailDetailSheetProps> = ({
             </View>
           )}
         </View>
+
+        {sendError && (
+          <View style={styles.errorBanner}>
+            <Text style={styles.errorBannerText}>⚠️ {sendError}</Text>
+          </View>
+        )}
       </View>
     </BottomSheet>
   );
@@ -353,6 +417,41 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#faf9f5',
   },
+  deleteBtn: {
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+    borderRadius: 13,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fef2f2',
+  },
+  deleteBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#dc2626',
+    fontFamily: FONTS.regular,
+  },
+  unwantedCard: {
+    backgroundColor: '#fff5f5',
+    borderWidth: 1,
+    borderColor: '#fed7d7',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+  },
+  unwantedTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#c53030',
+    marginBottom: 2,
+  },
+  unwantedDesc: {
+    fontSize: 11,
+    color: '#742a2a',
+    lineHeight: 16,
+  },
   archiveBtnText: {
     fontSize: 11,
     fontWeight: '600',
@@ -399,5 +498,19 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontFamily: FONTS.regular,
     letterSpacing: 0.3,
+  },
+  errorBanner: {
+    marginTop: 10,
+    backgroundColor: '#fff0ee',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#f5c6cb',
+  },
+  errorBannerText: {
+    color: '#a94442',
+    fontSize: 12,
+    lineHeight: 16,
   },
 });

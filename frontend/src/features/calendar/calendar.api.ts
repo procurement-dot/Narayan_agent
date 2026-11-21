@@ -1,6 +1,7 @@
 import { apiClient } from '../../shared/api/client';
 import {
   CalendarEvent,
+  CalendarNotificationItem,
   CreateCalendarEventPayload,
   MonthOverview,
   UpdateCalendarEventPayload,
@@ -40,6 +41,31 @@ export const calendarApi = {
     const res = await apiClient.post<{ message: string; result: { synced: number; warning?: string } }>(
       '/calendar/sync',
       { date: dateStr }
+    );
+    return res.data;
+  },
+
+  async getNotifications(): Promise<CalendarNotificationItem[]> {
+    const res = await apiClient.get<CalendarNotificationItem[]>('/calendar/notifications');
+    return res.data;
+  },
+
+  async getNotificationsCount(): Promise<{ count: number }> {
+    const res = await apiClient.get<{ count: number }>('/calendar/notifications/count');
+    return res.data;
+  },
+
+  async acceptNotification(id: string, payload?: any): Promise<{ message: string; event: CalendarEvent }> {
+    const res = await apiClient.post<{ message: string; event: CalendarEvent }>(
+      `/calendar/notifications/${id}/accept`,
+      payload || {}
+    );
+    return res.data;
+  },
+
+  async dismissNotification(id: string): Promise<{ success: boolean; message: string }> {
+    const res = await apiClient.post<{ success: boolean; message: string }>(
+      `/calendar/notifications/${id}/dismiss`
     );
     return res.data;
   },

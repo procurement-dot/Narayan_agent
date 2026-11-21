@@ -1,6 +1,6 @@
-export type EmailKind = 'task' | 'meeting' | 'noise';
+export type EmailKind = 'task' | 'meeting' | 'noise' | 'unwanted';
 
-export type EmailTab = 'priority' | 'meetings' | 'all' | 'low' | 'drafts';
+export type EmailTab = 'priority' | 'meetings' | 'all' | 'low' | 'drafts' | 'unwanted';
 
 export interface EmailItem {
   id: string;
@@ -18,6 +18,8 @@ export interface EmailItem {
   proposalId?: string;
   accountEmail?: string;
   accountId?: string;
+  isUnwanted?: boolean;
+  unwantedReason?: string;
 }
 
 export interface ProposalItem {

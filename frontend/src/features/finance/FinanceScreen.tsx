@@ -55,6 +55,9 @@ export const FinanceScreen: React.FC = () => {
     fetchBackendData,
     userNetCashFlow,
     setUserNetCashFlow,
+    userLiveBalance,
+    setUserLiveBalance,
+    syncEmailCredits,
   } = useFinanceStore();
 
   useEffect(() => {
@@ -70,11 +73,32 @@ export const FinanceScreen: React.FC = () => {
   const [isScanningModalVisible, setIsScanningModalVisible] = useState(false);
   const [scanProgress, setScanProgress] = useState<ScanProgressInfo | null>(null);
 
+  // User-controlled Live Bank Balance Modal
+  const [isLiveBalanceModalOpen, setIsLiveBalanceModalOpen] = useState(false);
+  const [liveBalanceMode, setLiveBalanceMode] = useState<'auto' | 'manual'>('auto');
+  const [manualBalanceInput, setManualBalanceInput] = useState('');
+
+  const handleSaveLiveBalance = async () => {
+    if (liveBalanceMode === 'manual') {
+      const val = parseFloat(manualBalanceInput.replace(/[₹,]/g, ''));
+      if (isNaN(val) || val < 0) {
+        showToast('Please enter a valid balance amount', 'warning');
+        return;
+      }
+      await setUserLiveBalance(val);
+      showToast(`Live SBI Balance set to ₹${val.toLocaleString('en-IN')}`, 'success');
+    } else {
+      await setUserLiveBalance(null);
+      showToast('Switched to auto-balance from latest SBI SMS', 'success');
+    }
+    setIsLiveBalanceModalOpen(false);
+  };
+
   // User-controlled Net Cash Flow Modal
   const [isNetCashFlowModalOpen, setIsNetCashFlowModalOpen] = useState(false);
   const [netCashFlowMode, setNetCashFlowMode] = useState<'auto' | 'manual'>('auto');
   const [manualCashFlowInput, setManualCashFlowInput] = useState('');
-  const [timePeriod, setTimePeriod] = useState<'month' | 'all'>('all');
+  const [timePeriod, setTimePeriod] = useState<'month' | 'all'>('month');
 
   const handleSaveNetCashFlow = async () => {
     if (netCashFlowMode === 'manual') {
@@ -109,9 +133,35 @@ export const FinanceScreen: React.FC = () => {
         setScanProgress(info);
       });
 
+      // Step 2: Ingest salary & credited notification emails from connected Gmail accounts
+      let emailSyncedCount = 0;
+      try {
+        setScanProgress({
+          percent: 92,
+          stage: 'Scanning Gmail for Salary & Credits...',
+          detail: 'Checking connected Gmail accounts for salary credits',
+          current: summary.bankSmsCount,
+          total: summary.bankSmsCount,
+          timeRemaining: '~1s',
+        });
+        const emailRes = await syncEmailCredits();
+        if (emailRes && emailRes.syncedCount) {
+          emailSyncedCount = emailRes.syncedCount;
+        }
+      } catch (emailErr) {
+        console.warn('Email credit sync skipped or failed:', emailErr);
+      }
+
       setIsScanningModalVisible(false);
       setScanProgress(null);
-      showToast(`Synced ${summary.bankSmsCount} bank transactions!`, 'success');
+      if (emailSyncedCount > 0) {
+        showToast(
+          `Synced ${summary.bankSmsCount} SBI SMS + ${emailSyncedCount} Salary Credit emails!`,
+          'success'
+        );
+      } else {
+        showToast(`Synced ${summary.bankSmsCount} bank transactions!`, 'success');
+      }
     } catch (e: any) {
       setIsScanningModalVisible(false);
       setScanProgress(null);
@@ -171,7 +221,10 @@ export const FinanceScreen: React.FC = () => {
   const totalRentExpected = assets.reduce((sum, a) => sum + Number(a.expectedRent || 0), 0);
   const totalRentReceived = assets.reduce((sum, a) => sum + Number(a.receivedRent || 0), 0);
   const totalLiquidBalances = (smsSyncSummary?.accountsFound || []).reduce(
-    (sum, acc) => sum + (Number(acc.lastBalance) || 0),
+    (sum, acc) => {
+      const bal = Number(acc.lastBalance) || 0;
+      return bal > 0 && bal <= 10000000 ? sum + bal : sum;
+    },
     0
   );
 
@@ -189,28 +242,32 @@ export const FinanceScreen: React.FC = () => {
 
   const periodCredited = React.useMemo(() => {
     return activePeriodTransactions
-      .filter((tx) => tx.type === 'credit')
-      .reduce((sum, tx) => sum + tx.amount, 0);
+      .filter((tx) => tx.direction === 'credit' || tx.type === 'credit')
+      .reduce((sum, tx) => sum + (tx.amountPaise ? tx.amountPaise / 100 : tx.amount), 0);
   }, [activePeriodTransactions]);
 
   const periodDebited = React.useMemo(() => {
     return activePeriodTransactions
-      .filter((tx) => tx.type === 'debit')
-      .reduce((sum, tx) => sum + tx.amount, 0);
+      .filter((tx) => tx.direction === 'debit' || tx.type === 'debit')
+      .reduce((sum, tx) => sum + (tx.amountPaise ? tx.amountPaise / 100 : tx.amount), 0);
   }, [activePeriodTransactions]);
 
-  const periodCreditCount = activePeriodTransactions.filter((tx) => tx.type === 'credit').length;
-  const periodDebitCount = activePeriodTransactions.filter((tx) => tx.type === 'debit').length;
+  const periodCreditCount = activePeriodTransactions.filter(
+    (tx) => tx.direction === 'credit' || tx.type === 'credit'
+  ).length;
+  const periodDebitCount = activePeriodTransactions.filter(
+    (tx) => tx.direction === 'debit' || tx.type === 'debit'
+  ).length;
 
   const autoNetCashFlow = periodCredited - periodDebited;
   const displayNetCashFlow =
     userNetCashFlow !== null ? userNetCashFlow : autoNetCashFlow;
 
-  // Real financial picture: actual verified liquid balance + user assets + loans
-  const dynamicTotalWorth =
-    totalLiquidBalances > 0
-      ? totalLiquidBalances + totalAssetsNet + totalLending
-      : totalAssetsNet + totalLending;
+  const latestSmsBalance = (smsSyncSummary?.accountsFound || [])[0]?.lastBalance;
+  const displayBankBalance = userLiveBalance !== null ? userLiveBalance : (latestSmsBalance || 0);
+
+  // Real financial picture: actual verified liquid balance (or user live override) + user assets + loans
+  const dynamicTotalWorth = displayBankBalance + totalAssetsNet + totalLending;
 
   const propertyLandTotal = assets
     .filter((x) => /property|real estate|land/i.test(x.type))
@@ -452,12 +509,26 @@ export const FinanceScreen: React.FC = () => {
 
             {/* Feature Banner: Sage (100% Dynamic) */}
             <View style={[styles.featureCard, styles.featureSage]}>
-              <Text style={styles.featureSmall}>Verified Bank & Cash Position</Text>
-              <Text style={styles.featureBig}>{formatMoney(dynamicTotalWorth)}</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={styles.featureSmall}>Verified Bank & Cash Position</Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    setManualBalanceInput(userLiveBalance !== null ? String(userLiveBalance) : '');
+                    setLiveBalanceMode(userLiveBalance !== null ? 'manual' : 'auto');
+                    setIsLiveBalanceModalOpen(true);
+                  }}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 3, paddingHorizontal: 9, backgroundColor: '#dfe9dd', borderRadius: 12 }}
+                >
+                  <Text style={{ fontSize: 11, color: '#27382c', fontWeight: '700' }}>✎ Set Live</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.featureBig}>{formatMoney(displayBankBalance)}</Text>
               <Text style={styles.featureSpan}>
-                {smsSyncSummary
-                  ? `Based on ${smsSyncSummary.bankSmsCount} verified transactions across ${smsSyncSummary.accountsFound.length} account${smsSyncSummary.accountsFound.length > 1 ? 's' : ''}`
-                  : 'Tap Sync All to automatically calculate from your bank SMS'}
+                {userLiveBalance !== null
+                  ? 'Live SBI balance set by you · Tap ✎ Set Live to edit'
+                  : smsSyncSummary
+                  ? `Based on ${smsSyncSummary.bankSmsCount} verified transactions · State Bank of India (•••• 3098)`
+                  : 'Tap Sync All to calculate from your SBI SMS'}
               </Text>
             </View>
 
@@ -708,7 +779,7 @@ export const FinanceScreen: React.FC = () => {
                   <Text style={[styles.assetStatus, { color: '#2e7d32' }]}>Verified via SMS</Text>
                 </View>
                 <Text style={styles.assetValue}>
-                  {acc.lastBalance !== undefined ? formatMoney(acc.lastBalance) : 'Verified'}
+                  {acc.lastBalance !== undefined && acc.lastBalance <= 10000000 ? formatMoney(acc.lastBalance) : 'Verified'}
                 </Text>
               </View>
             ))}
@@ -1471,9 +1542,9 @@ export const FinanceScreen: React.FC = () => {
             <View style={styles.sheetHandle} />
             <View style={styles.sheetHead}>
               <View>
-                <Text style={styles.sheetTitle}>Bank SMS Transactions</Text>
+                <Text style={styles.sheetTitle}>Verified Bank & Credit Ledger</Text>
                 <Text style={styles.sheetSub}>
-                  {parsedTransactions.length} items parsed across entire SMS history
+                  {parsedTransactions.length} verified transactions (SBI SMS & Email Salary Credits)
                 </Text>
               </View>
               <TouchableOpacity onPress={() => setIsSmsTransactionsModalOpen(false)}>
@@ -1531,6 +1602,15 @@ export const FinanceScreen: React.FC = () => {
                           <Text style={styles.smsTxBank}>{tx.bankName}</Text>
                           {tx.accountMask && (
                             <Text style={styles.smsTxAccount}>{tx.accountMask}</Text>
+                          )}
+                          {tx.source === 'email' ? (
+                            <View style={{ backgroundColor: '#e8f5e9', paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 4, borderWidth: 1, borderColor: '#c8e6c9', marginLeft: 4 }}>
+                              <Text style={{ fontSize: 9, fontWeight: '700', color: '#2e7d32' }}>✉ Email (Salary)</Text>
+                            </View>
+                          ) : (
+                            <View style={{ backgroundColor: '#f1f8e9', paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 4, marginLeft: 4 }}>
+                              <Text style={{ fontSize: 9, color: '#558b2f' }}>📱 SMS</Text>
+                            </View>
                           )}
                           <Text style={styles.smsTxDate}>{dateStr}</Text>
                         </View>
@@ -1776,6 +1856,108 @@ export const FinanceScreen: React.FC = () => {
                 onPress={handleSaveNetCashFlow}
               >
                 <Text style={styles.primaryButtonText}>Save Net Cash Flow</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ===================== MODAL 10: LIVE SBI BANK BALANCE ===================== */}
+      <Modal
+        visible={isLiveBalanceModalOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setIsLiveBalanceModalOpen(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.sheetContainer}>
+            <View style={styles.sheetHandle} />
+            <View style={styles.sheetHead}>
+              <View>
+                <Text style={styles.sheetTitle}>Live SBI Bank Position</Text>
+                <Text style={styles.sheetSub}>
+                  Enter exact balance from YONO/SBI or auto-detect from SMS
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setIsLiveBalanceModalOpen(false)}>
+                <Text style={styles.sheetClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+              {/* Mode Toggle Buttons */}
+              <View style={{ flexDirection: 'row', gap: 10, marginVertical: 14 }}>
+                <TouchableOpacity
+                  style={[
+                    styles.tabButton,
+                    liveBalanceMode === 'manual' && styles.tabButtonActive,
+                    { flex: 1, paddingVertical: 10 },
+                  ]}
+                  onPress={() => setLiveBalanceMode('manual')}
+                >
+                  <Text
+                    style={[
+                      styles.tabText,
+                      liveBalanceMode === 'manual' && styles.tabTextActive,
+                      { textAlign: 'center' },
+                    ]}
+                  >
+                    ✎ Set Live
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.tabButton,
+                    liveBalanceMode === 'auto' && styles.tabButtonActive,
+                    { flex: 1, paddingVertical: 10 },
+                  ]}
+                  onPress={() => setLiveBalanceMode('auto')}
+                >
+                  <Text
+                    style={[
+                      styles.tabText,
+                      liveBalanceMode === 'auto' && styles.tabTextActive,
+                      { textAlign: 'center' },
+                    ]}
+                  >
+                    ⚡ Auto from SMS
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {liveBalanceMode === 'manual' ? (
+                <View>
+                  <Text style={styles.inputLabel}>Current Live Balance in SBI (₹)</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="e.g. 15400"
+                    keyboardType="numeric"
+                    value={manualBalanceInput}
+                    onChangeText={setManualBalanceInput}
+                  />
+                  <Text style={{ fontSize: 12, color: '#66786a', marginTop: 6, lineHeight: 18 }}>
+                    Specify your exact current live balance from YONO / SBI. This guarantees 100% accuracy with your bank.
+                  </Text>
+                </View>
+              ) : (
+                <View style={{ backgroundColor: '#f6f9f5', padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#e2ede0', marginVertical: 8 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#27382c' }}>
+                    Latest Available Balance from Verified SBI SMS:
+                  </Text>
+                  <Text style={{ fontSize: 24, fontWeight: '700', color: '#27382c', marginTop: 6, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif' }}>
+                    {formatMoney(latestSmsBalance || 0)}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#66786a', marginTop: 4, lineHeight: 18 }}>
+                    Auto-extracted from your latest SBI debit/credit notification.
+                  </Text>
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={[styles.primaryButton, { marginTop: 24 }]}
+                onPress={handleSaveLiveBalance}
+              >
+                <Text style={styles.primaryButtonText}>Save & Update Position</Text>
               </TouchableOpacity>
             </ScrollView>
           </View>

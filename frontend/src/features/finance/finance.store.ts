@@ -32,10 +32,12 @@ interface FinanceState {
   isSyncingSms: boolean;
   isLoading: boolean;
   userNetCashFlow: number | null;
+  userLiveBalance: number | null;
 
   setTab: (tab: FinanceTab) => void;
   fetchBackendData: () => Promise<void>;
   setUserNetCashFlow: (amount: number | null) => Promise<void>;
+  setUserLiveBalance: (amount: number | null) => Promise<void>;
   addAsset: (asset: FinanceAsset) => Promise<void>;
   updateAssetRentReason: (assetName: string, reason: string) => Promise<void>;
   addLoan: (loan: FinanceLoan) => Promise<void>;
@@ -45,6 +47,7 @@ interface FinanceState {
   attachDocumentToRecord: (cat: string, index: number, docName: string) => Promise<void>;
   setIsSyncingSms: (loading: boolean) => void;
   applySmsSyncData: (summary: SmsSyncSummary, transactions: ParsedBankTransaction[]) => void;
+  syncEmailCredits: () => Promise<{ success: boolean; syncedCount: number; credits: ParsedBankTransaction[] } | null>;
 }
 
 export const useFinanceStore = create<FinanceState>((set, get) => ({
@@ -61,8 +64,24 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
   isSyncingSms: false,
   isLoading: false,
   userNetCashFlow: null,
+  userLiveBalance: null,
 
   setTab: (tab) => set({ currentTab: tab }),
+
+  setUserLiveBalance: async (amount) => {
+    set({ userLiveBalance: amount });
+    try {
+      await financeApi.createRecord({
+        category: 'Preferences',
+        title: 'Current Live Bank Balance',
+        maskedIdentifier: amount !== null ? `₹${amount}` : 'auto',
+        detail: 'User defined live SBI bank balance',
+        documentName: 'settings',
+      });
+    } catch (e) {
+      console.warn('[FinanceStore] Failed to save live balance preference:', e);
+    }
+  },
 
   setUserNetCashFlow: async (amount) => {
     set({ userNetCashFlow: amount });
@@ -90,14 +109,22 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
         financeApi.getTransactions('all', 100).catch(() => null),
       ]);
 
-      // Check for user-defined net cash flow
+      // Check for user-defined net cash flow & live balance
       let savedUserCashFlow: number | null = null;
+      let savedUserLiveBalance: number | null = null;
       if (records && records['Preferences']) {
         const pref = records['Preferences'].find((r: any) => r[0] === 'Monthly Net Cash Flow');
         if (pref && pref[1] && pref[1] !== 'auto') {
           const parsedVal = parseFloat(pref[1].replace(/[₹,]/g, ''));
           if (!isNaN(parsedVal)) {
             savedUserCashFlow = parsedVal;
+          }
+        }
+        const balPref = records['Preferences'].find((r: any) => r[0] === 'Current Live Bank Balance');
+        if (balPref && balPref[1] && balPref[1] !== 'auto') {
+          const parsedBal = parseFloat(balPref[1].replace(/[₹,]/g, ''));
+          if (!isNaN(parsedBal)) {
+            savedUserLiveBalance = parsedBal;
           }
         }
       }
@@ -109,6 +136,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
         retirement: retirement ? retirement : state.retirement,
         parsedTransactions: transactions && transactions.length > 0 ? transactions : state.parsedTransactions,
         userNetCashFlow: savedUserCashFlow !== null ? savedUserCashFlow : state.userNetCashFlow,
+        userLiveBalance: savedUserLiveBalance !== null ? savedUserLiveBalance : state.userLiveBalance,
         isLoading: false,
       }));
     } catch (e) {
@@ -283,4 +311,29 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
         alerts: updatedAlerts,
       };
     }),
+
+  syncEmailCredits: async () => {
+    try {
+      const res = await financeApi.syncEmailCredits();
+      if (res && res.credits && res.credits.length > 0) {
+        set((state) => {
+          const current = [...state.parsedTransactions];
+          for (const newTx of res.credits) {
+            const exists = current.some(
+              (c) => c.id === newTx.id || (c.refId && c.refId === newTx.refId)
+            );
+            if (!exists) {
+              current.unshift(newTx);
+            }
+          }
+          current.sort((a, b) => b.date - a.date);
+          return { parsedTransactions: current };
+        });
+      }
+      return res;
+    } catch (e) {
+      console.warn('[FinanceStore] Failed to sync email credits:', e);
+      return null;
+    }
+  },
 }));

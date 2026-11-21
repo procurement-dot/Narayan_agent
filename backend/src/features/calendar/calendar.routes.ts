@@ -9,3 +9,7 @@ calendarRouter.post('/events', calendarController.createEvent);
 calendarRouter.put('/events/:id', calendarController.updateEvent);
 calendarRouter.delete('/events/:id', calendarController.deleteEvent);
 calendarRouter.post('/sync', calendarController.syncCalendar);
+calendarRouter.get('/notifications', calendarController.getNotifications);
+calendarRouter.get('/notifications/count', calendarController.getNotificationsCount);
+calendarRouter.post('/notifications/:id/accept', calendarController.acceptNotification);
+calendarRouter.post('/notifications/:id/dismiss', calendarController.dismissNotification);

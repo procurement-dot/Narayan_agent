@@ -79,8 +79,11 @@ class SmsReaderModule(reactContext: ReactApplicationContext) : ReactContextBaseJ
                     if (idIdx != -1) map.putString("id", it.getString(idIdx) ?: "")
                     if (addressIdx != -1) map.putString("address", it.getString(addressIdx) ?: "")
                     if (bodyIdx != -1) map.putString("body", it.getString(bodyIdx) ?: "")
-                    if (dateIdx != -1) map.putDouble("date", it.getLong(dateIdx).toDouble())
-                    if (dateSentIdx != -1) map.putDouble("dateSent", it.getLong(dateSentIdx).toDouble())
+                    val d = if (dateIdx != -1) it.getLong(dateIdx) else 0L
+                    val ds = if (dateSentIdx != -1) it.getLong(dateSentIdx) else 0L
+                    val bestDate = if (d > 0L) d else if (ds > 0L) ds else System.currentTimeMillis()
+                    map.putDouble("date", bestDate.toDouble())
+                    map.putDouble("dateSent", (if (ds > 0L) ds else bestDate).toDouble())
 
                     smsList.pushMap(map)
                     count++

@@ -70,6 +70,11 @@ export const financeApi = {
     return res.data;
   },
 
+  async syncEmailCredits(): Promise<{ success: boolean; syncedCount: number; credits: ParsedBankTransaction[] }> {
+    const res = await apiClient.post('/finance/email/sync');
+    return res.data;
+  },
+
   async getTransactions(type?: string, limit = 100): Promise<ParsedBankTransaction[]> {
     const res = await apiClient.get<ParsedBankTransaction[]>('/finance/sms/transactions', {
       params: { type, limit },

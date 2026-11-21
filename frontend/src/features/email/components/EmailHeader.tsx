@@ -34,10 +34,7 @@ export const EmailHeader: React.FC<EmailHeaderProps> = ({ onBack }) => {
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.headline}>
-        Less inbox.{'\n'}
-        <Text style={styles.headlineEm}>More clarity.</Text>
-      </Text>
+      <Text style={styles.headline}>Email</Text>
       <Text style={styles.subtitle}>
         Understand · extract · review · act. No message is ever sent automatically.
       </Text>

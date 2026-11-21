@@ -21,6 +21,7 @@ financeRouter.delete('/loans/:id', financeController.deleteLoan);
 // SMS Sync & Transactions
 financeRouter.post('/sms/sync', financeController.syncSmsTransactions);
 financeRouter.get('/sms/transactions', financeController.getTransactions);
+financeRouter.post('/email/sync', financeController.syncEmailCredits);
 
 // Retirement
 financeRouter.get('/retirement', financeController.getRetirement);

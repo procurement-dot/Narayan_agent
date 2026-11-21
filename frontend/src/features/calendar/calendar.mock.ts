@@ -1,4 +1,4 @@
-import { CalendarEvent } from './calendar.types';
+import { CalendarEvent, CalendarNotificationItem } from './calendar.types';
 
 export const INITIAL_CALENDAR_EVENTS: CalendarEvent[] = [
   {
@@ -18,15 +18,6 @@ export const INITIAL_CALENDAR_EVENTS: CalendarEvent[] = [
     subtitle: 'Your day, priorities, open loops',
     cat: 'gray',
     kind: 'assistant',
-  },
-  {
-    id: 'akc',
-    start: '10:00',
-    end: '10:50',
-    title: 'AKC season planning',
-    subtitle: 'KinderSports · focus session',
-    cat: 'peach',
-    kind: 'work',
   },
   {
     id: 'break',
@@ -72,5 +63,36 @@ export const INITIAL_CALENDAR_EVENTS: CalendarEvent[] = [
     subtitle: "Notice, don't judge",
     cat: 'purple',
     kind: 'spirit',
+  },
+];
+
+export const INITIAL_CALENDAR_NOTIFICATIONS: CalendarNotificationItem[] = [
+  {
+    id: 'notif-akc',
+    source: 'email_meeting',
+    module: 'email',
+    type: 'meeting',
+    title: 'AKC season planning',
+    subtitle: 'KinderSports · focus session',
+    detail: 'Meeting to plan the upcoming AKC sports season, budget, and scheduling.\n\nEvidence: "Let us schedule a sync on season planning next week."',
+    date: new Date().toISOString().split('T')[0],
+    startTime: '10:00',
+    endTime: '10:50',
+    sender: 'KinderSports <team@kindersports.in>',
+    status: 'pending',
+  },
+  {
+    id: 'notif-hdfc',
+    source: 'finance_bill',
+    module: 'finance',
+    type: 'bill',
+    title: 'Reminder · HDFC credit card',
+    subtitle: '₹28,450 scheduled payment reminder',
+    detail: 'HDFC Bank Credit card statement payment due date reminder for ₹28,450.',
+    date: new Date().toISOString().split('T')[0],
+    startTime: '09:30',
+    endTime: '10:00',
+    status: 'pending',
+    amount: 28450,
   },
 ];

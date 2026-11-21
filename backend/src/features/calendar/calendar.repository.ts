@@ -79,150 +79,7 @@ export const calendarRepository = {
       console.warn('[CalendarRepo] Tasks query skipped:', tErr);
     }
 
-    // 3. proposals table (Inbound AI-detected Meetings & Task proposals from Email / Notes)
-    const handledEmailIds = new Set<string>();
-
-    try {
-      const proposals = await db.query(
-        `SELECT p.*, e.from_name, e.from_email, e.subject as email_subject, e.received_at
-         FROM proposals p
-         LEFT JOIN emails e ON e.id = p.email_id
-         WHERE (p.user_id = $1 OR p.user_id = '00000000-0000-0000-0000-000000000000')
-           AND p.status != 'dismissed'
-           AND (
-             p.created_at::date = $2::date
-             OR (e.received_at IS NOT NULL AND e.received_at::date = $2::date)
-           )`,
-        [userId, dateStr]
-      );
-
-      for (const p of proposals) {
-        if (p.email_id) handledEmailIds.add(p.email_id);
-        if (existingProposalIds.has(p.id)) continue;
-        const isMeeting = p.type === 'meeting';
-        addEventSafely({
-          id: `prop-${p.id}`,
-          user_id: p.user_id,
-          date: dateStr,
-          start_time: p.start_time || (isMeeting ? '14:00' : '15:00'),
-          end_time: p.end_time || (isMeeting ? '14:45' : '15:30'),
-          title: p.title,
-          subtitle: isMeeting
-            ? (p.from_name ? `Meeting with ${p.from_name}` : (p.context ? `Meeting · ${p.context}` : 'Inbound meeting request'))
-            : (p.from_name ? `Action requested by ${p.from_name}` : 'Email action proposal'),
-          detail: (p.detail || '') + (p.evidence ? `\n\nQuoted Evidence: "${p.evidence}"` : ''),
-          cat: isMeeting ? 'peach' : 'purple',
-          kind: 'work',
-          source: isMeeting ? 'email_meeting' : 'email_proposal',
-          source_proposal_id: p.id,
-          status: 'active',
-          created_at: p.created_at,
-        });
-      }
-    } catch (pErr) {
-      console.warn('[CalendarRepo] Proposals query skipped:', pErr);
-    }
-
-    // 4. emails table (Inbound Emails marked as 'meeting' not already covered by a proposal)
-    try {
-      const meetingEmails = await db.query(
-        `SELECT e.*
-         FROM emails e
-         JOIN email_accounts a ON a.id = e.account_id
-         WHERE a.user_id = $1
-           AND e.kind = 'meeting'
-           AND (e.is_archived IS FALSE OR e.is_archived IS NULL)
-           AND e.id NOT IN (SELECT email_id FROM proposals WHERE email_id IS NOT NULL)
-           AND e.received_at::date = $2::date`,
-        [userId, dateStr]
-      );
-
-      for (const me of meetingEmails) {
-        if (handledEmailIds.has(me.id)) continue;
-        addEventSafely({
-          id: `email-mtg-${me.id}`,
-          user_id: userId,
-          date: dateStr,
-          start_time: '15:00',
-          end_time: '15:45',
-          title: me.subject || 'Meeting Request',
-          subtitle: `Meeting invitation from ${me.from_name || me.from_email}`,
-          detail: `From: ${me.from_name} <${me.from_email}>\n\n${me.preview || (me.content ? me.content.slice(0, 200) : '')}`,
-          cat: 'peach',
-          kind: 'work',
-          source: 'email_meeting',
-          status: 'active',
-          created_at: me.received_at,
-        });
-      }
-    } catch (meErr) {
-      console.warn('[CalendarRepo] Meeting emails query skipped:', meErr);
-    }
-
-    // 5. notes table (Voice Meetings with MoM & Action items)
-    try {
-      const notes = await db.query(
-        `SELECT n.*
-         FROM notes n
-         WHERE (n.user_id = $1 OR n.user_id = '00000000-0000-0000-0000-000000000000')
-           AND n.created_at::date = $2::date`,
-        [userId, dateStr]
-      );
-
-      for (const n of notes) {
-        if (n.source_type === 'voice_meeting' || (n.mom_data && n.mom_data.summary)) {
-          addEventSafely({
-            id: `note-mom-${n.id}`,
-            user_id: userId,
-            date: dateStr,
-            start_time: '11:00',
-            end_time: '11:45',
-            title: n.title,
-            subtitle: `Meeting MoM · ${n.area} (${n.mom_data?.actions?.length || 0} action items)`,
-            detail: n.mom_data?.summary || n.body || '',
-            cat: 'green',
-            kind: 'work',
-            source: 'notes_mom',
-            status: 'active',
-            created_at: n.created_at,
-          });
-
-          // Also plot specific action items if present
-          if (Array.isArray(n.mom_data?.actions)) {
-            n.mom_data.actions.forEach((act: any, idx: number) => {
-              if (act?.task) {
-                const startHour = 16 + Math.floor(idx / 2);
-                const startMin = (idx % 2) * 30;
-                const endHour = startMin === 0 ? startHour : startHour + 1;
-                const endMin = startMin === 0 ? 30 : 0;
-                const startTimeStr = `${String(startHour).padStart(2, '0')}:${String(startMin).padStart(2, '0')}`;
-                const endTimeStr = `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
-
-                addEventSafely({
-                  id: `note-act-${n.id}-${idx}`,
-                  user_id: userId,
-                  date: dateStr,
-                  start_time: startTimeStr,
-                  end_time: endTimeStr,
-                  title: act.task,
-                  subtitle: `MoM Action · ${act.assignee || 'Self'} (Due: ${act.due || 'Today'})`,
-                  detail: `Context from meeting note: "${n.title}"`,
-                  cat: 'purple',
-                  kind: 'work',
-                  source: 'notes_action',
-                  status: 'active',
-                  created_at: n.created_at,
-                });
-              }
-            });
-          }
-        }
-      }
-    } catch (nErr) {
-      console.warn('[CalendarRepo] Notes query skipped:', nErr);
-    }
-
-    // 6. health_sports_events table (Sports sessions, marathons, health events)
+    // 3. Health & sports events (Confirmed health sessions)
     try {
       const sports = await db.query(
         `SELECT * FROM health_sports_events WHERE date = $1`,
@@ -291,53 +148,6 @@ export const calendarRepository = {
       for (const r of taskRows) incrementCount(r.day, Number(r.count || 0));
     } catch (e) {
       console.warn('[CalendarRepo] getMonthCounts taskRows error:', e);
-    }
-
-    try {
-      const proposalRows = await db.query(
-        `SELECT created_at::date::text as day, COUNT(*) as count
-         FROM proposals
-         WHERE (user_id = $1 OR user_id = '00000000-0000-0000-0000-000000000000')
-           AND status != 'dismissed'
-           AND created_at::date >= $2::date AND created_at::date <= $3::date
-         GROUP BY created_at::date`,
-        [userId, startPattern, endPattern]
-      );
-      for (const r of proposalRows) incrementCount(r.day, Number(r.count || 0));
-    } catch (e) {
-      // Ignore
-    }
-
-    try {
-      const emailRows = await db.query(
-        `SELECT e.received_at::date::text as day, COUNT(*) as count
-         FROM emails e
-         JOIN email_accounts a ON a.id = e.account_id
-         WHERE a.user_id = $1 AND e.kind = 'meeting'
-           AND (e.is_archived IS FALSE OR e.is_archived IS NULL)
-           AND e.id NOT IN (SELECT email_id FROM proposals WHERE email_id IS NOT NULL)
-           AND e.received_at::date >= $2::date AND e.received_at::date <= $3::date
-         GROUP BY e.received_at::date`,
-        [userId, startPattern, endPattern]
-      );
-      for (const r of emailRows) incrementCount(r.day, Number(r.count || 0));
-    } catch (e) {
-      // Ignore
-    }
-
-    try {
-      const notesRows = await db.query(
-        `SELECT created_at::date::text as day, COUNT(*) as count
-         FROM notes
-         WHERE (user_id = $1 OR user_id = '00000000-0000-0000-0000-000000000000')
-           AND (source_type = 'voice_meeting' OR mom_data IS NOT NULL)
-           AND created_at::date >= $2::date AND created_at::date <= $3::date
-         GROUP BY created_at::date`,
-        [userId, startPattern, endPattern]
-      );
-      for (const r of notesRows) incrementCount(r.day, Number(r.count || 0));
-    } catch (e) {
-      // Ignore
     }
 
     return counts;
@@ -570,5 +380,279 @@ export const calendarRepository = {
         event.googleEventId,
       ]
     );
+  },
+
+  async getPendingNotifications(userId: string) {
+    const notifications: any[] = [];
+    const seenTitles = new Set<string>();
+
+    const addNotifSafely = (item: any) => {
+      const key = `${(item.title || '').trim().toLowerCase()}_${item.date || ''}_${item.startTime || ''}`;
+      if (!seenTitles.has(key)) {
+        seenTitles.add(key);
+        notifications.push(item);
+      }
+    };
+
+    // 1. Pending Proposals from Emails
+    try {
+      const proposals = await db.query(
+        `SELECT p.*, e.from_name, e.from_email, e.subject as email_subject, e.received_at
+         FROM proposals p
+         LEFT JOIN emails e ON e.id = p.email_id
+         WHERE (p.user_id = $1 OR p.user_id = '00000000-0000-0000-0000-000000000000' OR p.user_id = '00000000-0000-0000-0000-000000000001')
+           AND p.status = 'pending'
+         ORDER BY p.created_at DESC`,
+        [userId]
+      );
+
+      for (const p of proposals) {
+        const isMeeting = p.type === 'meeting';
+        const d = p.created_at
+          ? (p.created_at instanceof Date ? p.created_at.toISOString().split('T')[0] : String(p.created_at).split('T')[0])
+          : new Date().toISOString().split('T')[0];
+        addNotifSafely({
+          id: `prop-${p.id}`,
+          rawId: p.id,
+          source: isMeeting ? 'email_meeting' : 'email_proposal',
+          module: 'email',
+          type: isMeeting ? 'meeting' : 'task',
+          title: p.title,
+          subtitle: isMeeting
+            ? (p.from_name ? `Meeting with ${p.from_name}` : (p.context ? `Meeting · ${p.context}` : 'Inbound meeting proposal'))
+            : (p.from_name ? `Action requested by ${p.from_name}` : 'Email action proposal'),
+          detail: (p.detail || '') + (p.evidence ? `\n\nQuoted Evidence: "${p.evidence}"` : ''),
+          date: d,
+          startTime: p.start_time || (isMeeting ? '14:00' : '15:00'),
+          endTime: p.end_time || (isMeeting ? '14:45' : '15:30'),
+          evidence: p.evidence || undefined,
+          sender: p.from_name ? `${p.from_name} <${p.from_email || ''}>` : p.from_email,
+          status: 'pending',
+          createdAt: p.created_at,
+        });
+      }
+    } catch (pErr) {
+      console.warn('[CalendarRepo] getPendingNotifications proposals error:', pErr);
+    }
+
+    // 2. Inbound Meeting Emails not yet in proposals
+    try {
+      const meetingEmails = await db.query(
+        `SELECT e.*
+         FROM emails e
+         JOIN email_accounts a ON a.id = e.account_id
+         WHERE (a.user_id = $1 OR a.user_id = '00000000-0000-0000-0000-000000000001')
+           AND e.kind = 'meeting'
+           AND (e.is_archived IS FALSE OR e.is_archived IS NULL)
+           AND e.id NOT IN (SELECT email_id FROM proposals WHERE email_id IS NOT NULL)
+         ORDER BY e.received_at DESC LIMIT 15`,
+        [userId]
+      );
+
+      for (const me of meetingEmails) {
+        const d = me.received_at
+          ? (me.received_at instanceof Date ? me.received_at.toISOString().split('T')[0] : String(me.received_at).split('T')[0])
+          : new Date().toISOString().split('T')[0];
+        addNotifSafely({
+          id: `email-mtg-${me.id}`,
+          rawId: me.id,
+          source: 'email_meeting',
+          module: 'email',
+          type: 'meeting',
+          title: me.subject || 'Meeting Invitation',
+          subtitle: `From ${me.from_name || me.from_email}`,
+          detail: `From: ${me.from_name} <${me.from_email}>\n\n${me.preview || (me.content ? me.content.slice(0, 300) : '')}`,
+          date: d,
+          startTime: '15:00',
+          endTime: '15:45',
+          sender: me.from_name ? `${me.from_name} <${me.from_email}>` : me.from_email,
+          status: 'pending',
+          createdAt: me.received_at,
+        });
+      }
+    } catch (meErr) {
+      console.warn('[CalendarRepo] getPendingNotifications meeting emails error:', meErr);
+    }
+
+    // 3. Notes MoM (Voice meetings and actionable summaries)
+    try {
+      const notes = await db.query(
+        `SELECT n.*
+         FROM notes n
+         WHERE (n.user_id = $1 OR n.user_id = '00000000-0000-0000-0000-000000000000' OR n.user_id = '00000000-0000-0000-0000-000000000001')
+           AND (n.source_type = 'voice_meeting' OR (n.mom_data IS NOT NULL AND n.mom_data::text != '{}'))
+         ORDER BY n.created_at DESC LIMIT 10`,
+        [userId]
+      );
+
+      for (const n of notes) {
+        const d = n.created_at
+          ? (n.created_at instanceof Date ? n.created_at.toISOString().split('T')[0] : String(n.created_at).split('T')[0])
+          : new Date().toISOString().split('T')[0];
+        addNotifSafely({
+          id: `note-mom-${n.id}`,
+          rawId: n.id,
+          source: 'notes_mom',
+          module: 'notes',
+          type: 'meeting',
+          title: n.title || 'Meeting Summary & Action Items',
+          subtitle: `Notes MoM · ${n.area || 'General'} (${n.mom_data?.actions?.length || 0} action items)`,
+          detail: n.mom_data?.summary || n.body || '',
+          date: d,
+          startTime: '11:00',
+          endTime: '11:45',
+          status: 'pending',
+          createdAt: n.created_at,
+        });
+      }
+    } catch (nErr) {
+      console.warn('[CalendarRepo] getPendingNotifications notes error:', nErr);
+    }
+
+    // 4. Finance Upcoming Bills / Reminders
+    try {
+      const financeRecords = await db.query(
+        `SELECT * FROM finance_records 
+         WHERE (user_id = $1 OR user_id = '00000000-0000-0000-0000-000000000001')
+           AND category IN ('bill', 'credit_card', 'loan')
+         ORDER BY created_at DESC LIMIT 5`,
+        [userId]
+      );
+
+      for (const f of financeRecords) {
+        const d = f.created_at
+          ? (f.created_at instanceof Date ? f.created_at.toISOString().split('T')[0] : String(f.created_at).split('T')[0])
+          : new Date().toISOString().split('T')[0];
+        addNotifSafely({
+          id: `finance-bill-${f.id}`,
+          rawId: f.id,
+          source: 'finance_bill',
+          module: 'finance',
+          type: 'bill',
+          title: `Reminder · ${f.title}`,
+          subtitle: `${f.masked_identifier || ''} · ${f.category}`,
+          detail: f.detail || 'Scheduled finance reminder',
+          date: d,
+          startTime: '09:30',
+          endTime: '10:00',
+          status: 'pending',
+          createdAt: f.created_at,
+        });
+      }
+    } catch (fErr) {
+      // Ignore if table or records not found
+    }
+
+    return notifications;
+  },
+
+  async getPendingNotificationsCount(userId: string): Promise<number> {
+    const list = await this.getPendingNotifications(userId);
+    return list.length;
+  },
+
+  async acceptNotification(
+    userId: string,
+    notificationId: string,
+    eventData?: {
+      title?: string;
+      subtitle?: string;
+      date?: string;
+      start?: string;
+      end?: string;
+      detail?: string;
+      cat?: string;
+      kind?: string;
+    }
+  ) {
+    let propUUID: string | null = null;
+
+    if (notificationId.startsWith('prop-')) {
+      propUUID = notificationId.replace('prop-', '');
+    } else if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(notificationId)) {
+      propUUID = notificationId;
+    }
+
+    // If it's a proposal, update its status to 'approved'
+    if (propUUID) {
+      await db.query(
+        `UPDATE proposals SET status = 'approved' WHERE id = $1`,
+        [propUUID]
+      );
+    }
+
+    const title = eventData?.title || 'Scheduled Event';
+    const subtitle = eventData?.subtitle || 'Added to calendar rhythm';
+    const detail = eventData?.detail || '';
+    const date = eventData?.date || new Date().toISOString().split('T')[0];
+    const start = eventData?.start || '10:00';
+    const end = eventData?.end || '10:45';
+    const cat = eventData?.cat || 'peach';
+    const kind = eventData?.kind || 'work';
+
+    // Duplicate check in calendar_events
+    const existing = await db.queryOne(
+      `SELECT * FROM calendar_events 
+       WHERE user_id = $1 AND date = $2 AND start_time = $3 AND title = $4 AND status != 'cancelled'`,
+      [userId, date, start, title]
+    );
+
+    if (existing) {
+      return existing;
+    }
+
+    // Insert into calendar_events
+    const newEvent = await db.queryOne(
+      `INSERT INTO calendar_events (
+        user_id, date, start_time, end_time, title, subtitle, detail, cat, kind, source, source_proposal_id, status
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'active')
+      RETURNING *`,
+      [
+        userId,
+        date,
+        start,
+        end,
+        title,
+        subtitle,
+        detail,
+        cat,
+        kind,
+        propUUID ? 'email_proposal' : 'local',
+        propUUID || null,
+      ]
+    );
+
+    return newEvent;
+  },
+
+  async dismissNotification(userId: string, notificationId: string) {
+    if (notificationId.startsWith('prop-')) {
+      const propUUID = notificationId.replace('prop-', '');
+      await db.query(
+        `UPDATE proposals SET status = 'dismissed' WHERE id = $1`,
+        [propUUID]
+      );
+      return { success: true };
+    }
+
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(notificationId)) {
+      await db.query(
+        `UPDATE proposals SET status = 'dismissed' WHERE id = $1`,
+        [notificationId]
+      );
+      return { success: true };
+    }
+
+    // If it's email-mtg-<uuid>, mark email archived
+    if (notificationId.startsWith('email-mtg-')) {
+      const emailId = notificationId.replace('email-mtg-', '');
+      await db.query(
+        `UPDATE emails SET is_archived = true WHERE id = $1`,
+        [emailId]
+      );
+      return { success: true };
+    }
+
+    return { success: true };
   },
 };

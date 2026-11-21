@@ -8,12 +8,14 @@ import {
   TextInput,
   Modal,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { useCalendarStore } from './calendar.store';
 import { useNavigationStore } from '../navigation/navigation.store';
 import { CalendarEvent } from './calendar.types';
 import { useToast } from '../../shared/components/Toast';
 import { lockScreenService } from './lockScreen.service';
+import { NotificationsSheet } from './components/NotificationsSheet';
 
 const UNIT = 86; // 86px per hour (exact match to HTML prototype)
 const START_HOUR = 5;
@@ -40,6 +42,10 @@ export const CalendarScreen: React.FC = () => {
     fetchMonthOverview,
     syncGoogleCalendar,
     isSyncing,
+    openNotifications,
+    unreadNotificationsCount,
+    fetchNotifications,
+    fetchNotificationsCount,
   } = useCalendarStore();
 
   const { openDock } = useNavigationStore();
@@ -49,10 +55,12 @@ export const CalendarScreen: React.FC = () => {
 
   const [isPhoneLocked, setIsPhoneLocked] = useState(false);
 
-  // Fetch initial day events and month overview & initialize Lock Screen Calendar Service
+  // Fetch initial day events and month overview, notifications & initialize Lock Screen Calendar Service
   useEffect(() => {
     fetchDayEvents();
     fetchMonthOverview();
+    fetchNotifications();
+    fetchNotificationsCount();
 
     // Start Lock Screen Calendar Service
     lockScreenService.startLockScreenService().catch(() => {});
@@ -406,6 +414,22 @@ export const CalendarScreen: React.FC = () => {
                 <Text style={styles.syncHeaderBtnText}>Sync ↻</Text>
               )}
             </TouchableOpacity>
+
+            {/* Notification Bell Button */}
+            <TouchableOpacity
+              style={styles.bellHeaderBtn}
+              onPress={openNotifications}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.bellIconText}>🔔</Text>
+              {unreadNotificationsCount > 0 && (
+                <View style={styles.bellBadge}>
+                  <Text style={styles.bellBadgeText}>
+                    {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
           </View>
         </View>
       </View>
@@ -469,10 +493,19 @@ export const CalendarScreen: React.FC = () => {
               const isNear = hour === currentHour && isSelectedToday;
               const topPos = i * UNIT;
               return (
-                <View key={hour} style={[styles.hourRow, { top: topPos }]}>
-                  <Text style={[styles.hourDigit, isNear && styles.hourDigitNear]}>
-                    {String(hour % 24).padStart(2, '0')}
-                  </Text>
+                <View
+                  key={hour}
+                  pointerEvents="none"
+                  style={[styles.hourRow, { top: topPos }]}
+                >
+                  <View style={styles.hourDigitBox}>
+                    <Text
+                      style={[styles.hourDigit, isNear && styles.hourDigitNear]}
+                      allowFontScaling={false}
+                    >
+                      {String(hour % 24).padStart(2, '0')}
+                    </Text>
+                  </View>
                   <View style={styles.hourRule} />
                 </View>
               );
@@ -915,6 +948,9 @@ export const CalendarScreen: React.FC = () => {
         </View>
       </Modal>
 
+      {/* Cross-Module Notifications Sheet */}
+      <NotificationsSheet />
+
       {/* Floating Unlock Button when phone is locked */}
       {isPhoneLocked && (
         <TouchableOpacity
@@ -1050,6 +1086,38 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#49544b',
   },
+  bellHeaderBtn: {
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 999,
+    backgroundColor: '#f1f2ee',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    position: 'relative',
+  },
+  bellIconText: {
+    fontSize: 12,
+  },
+  bellBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#d4805c',
+    borderRadius: 9,
+    minWidth: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: '#fcfbf8',
+  },
+  bellBadgeText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '800',
+  },
   dayToggle: {
     flexDirection: 'row',
     backgroundColor: '#f1f2ee',
@@ -1088,27 +1156,35 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    height: 1,
+    height: UNIT,
     flexDirection: 'row',
+    alignItems: 'flex-start',
+    zIndex: 1,
+  },
+  hourDigitBox: {
+    width: 82,
+    height: UNIT,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   hourDigit: {
-    width: 76,
-    paddingRight: 14,
-    textAlign: 'right',
-    fontSize: 13,
-    fontWeight: '400',
-    color: '#b6bcb5',
-    letterSpacing: -0.5,
+    fontSize: 48,
+    fontFamily: Platform.OS === 'android' ? 'sans-serif-light' : undefined,
+    fontWeight: '300',
+    color: '#bbbeb7',
+    letterSpacing: -2,
+    textAlign: 'center',
+    includeFontPadding: false,
   },
   hourDigitNear: {
-    color: '#343c36',
+    color: '#bd745b',
+    fontFamily: Platform.OS === 'android' ? 'sans-serif-medium' : undefined,
     fontWeight: '600',
   },
   hourRule: {
     flex: 1,
     height: 1,
-    backgroundColor: '#f1f2ee',
+    backgroundColor: '#ebece6',
   },
   verticalTrack: {
     position: 'absolute',
@@ -1135,7 +1211,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    height: 1,
+    height: 20,
+    marginTop: -10,
     flexDirection: 'row',
     alignItems: 'center',
     zIndex: 5,
@@ -1143,13 +1220,16 @@ const styles = StyleSheet.create({
   nowBadge: {
     width: 76,
     backgroundColor: '#fcfbf8',
-    paddingVertical: 1,
+    paddingVertical: 2,
+    alignItems: 'flex-end',
+    paddingRight: 6,
   },
   nowBadgeText: {
     fontSize: 12,
     fontWeight: '800',
     color: '#c37c5d',
     letterSpacing: -0.3,
+    includeFontPadding: false,
   },
   nowDot: {
     width: 8,

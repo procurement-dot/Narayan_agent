@@ -335,21 +335,6 @@ class OAuthServerModule(reactContext: ReactApplicationContext) : ReactContextBas
             if (code != null) {
                 val authCode = code
                 val authState = state ?: ""
-                thread(name = "OAuthForwardThread", isDaemon = true) {
-                    try {
-                        val backendUrl = "https://narayan-agent.onrender.com/api/email/oauth/callback?code=" +
-                                Uri.encode(authCode) +
-                                "&state=" + Uri.encode(authState)
-                        val conn = URL(backendUrl).openConnection() as HttpURLConnection
-                        conn.requestMethod = "GET"
-                        conn.connectTimeout = 30000
-                        conn.readTimeout = 30000
-                        conn.responseCode
-                        conn.disconnect()
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
 
                 val params = Arguments.createMap().apply {
                     putString("code", authCode)

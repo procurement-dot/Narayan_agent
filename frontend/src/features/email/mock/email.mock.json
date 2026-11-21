@@ -34,9 +34,26 @@
       "time": "Yesterday",
       "preview": "Highlights, offers, articles and announcements.",
       "content": "Weekly updates about articles and offers. No explicit action requested.",
-      "kind": "noise",
+      "kind": "unwanted",
+      "isUnwanted": true,
+      "unwantedReason": "Automated newsletter digest",
       "draft": "",
       "source": "Gmail · Community Newsletter",
+      "confidence": "High"
+    },
+    {
+      "id": "e5",
+      "name": "Global Retail Deals",
+      "subject": "⚡ 50% Off Flash Sale on Sports Gear",
+      "scope": "personal",
+      "time": "2 days ago",
+      "preview": "Exclusive weekend discounts and coupon codes for club members.",
+      "content": "Limited time offer! Use code FLASH50 to claim 50% discount on all outdoor fitness accessories. Click here to unsubscribe.",
+      "kind": "unwanted",
+      "isUnwanted": true,
+      "unwantedReason": "Promotional sales & discount offer",
+      "draft": "",
+      "source": "Gmail · Retail Deals",
       "confidence": "High"
     },
     {

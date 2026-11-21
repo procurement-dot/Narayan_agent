@@ -47,8 +47,25 @@ export const financeRepository = {
           category TEXT DEFAULT 'general',
           raw_body TEXT,
           date BIGINT NOT NULL,
+          amount_paise BIGINT,
+          balance_paise BIGINT,
+          is_expense BOOLEAN DEFAULT TRUE,
+          direction TEXT,
+          ref_id TEXT,
           created_at TIMESTAMPTZ DEFAULT NOW()
         );
+
+        -- Add any missing columns to existing table
+        DO $$ 
+        BEGIN 
+          BEGIN ALTER TABLE finance_transactions ADD COLUMN amount_paise BIGINT; EXCEPTION WHEN duplicate_column THEN END;
+          BEGIN ALTER TABLE finance_transactions ADD COLUMN balance_paise BIGINT; EXCEPTION WHEN duplicate_column THEN END;
+          BEGIN ALTER TABLE finance_transactions ADD COLUMN is_expense BOOLEAN DEFAULT TRUE; EXCEPTION WHEN duplicate_column THEN END;
+          BEGIN ALTER TABLE finance_transactions ADD COLUMN direction TEXT; EXCEPTION WHEN duplicate_column THEN END;
+          BEGIN ALTER TABLE finance_transactions ADD COLUMN ref_id TEXT; EXCEPTION WHEN duplicate_column THEN END;
+          BEGIN ALTER TABLE finance_transactions ADD COLUMN source TEXT DEFAULT 'sms'; EXCEPTION WHEN duplicate_column THEN END;
+          BEGIN ALTER TABLE finance_transactions ADD COLUMN email_id UUID; EXCEPTION WHEN duplicate_column THEN END;
+        END $$;
 
         CREATE TABLE IF NOT EXISTS finance_records (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -179,9 +196,15 @@ export const financeRepository = {
     );
   },
 
-  // ================= SMS TRANSACTIONS =================
-  async clearTransactions(userId = DEFAULT_USER_ID) {
+  // ================= SMS & EMAIL TRANSACTIONS =================
+  async clearTransactions(userId = DEFAULT_USER_ID, keepEmailCredits = true) {
     await this.ensureTablesExist();
+    if (keepEmailCredits) {
+      return db.query(
+        `DELETE FROM finance_transactions WHERE user_id = $1 AND (source != 'email' OR source IS NULL)`,
+        [userId]
+      );
+    }
     return db.query(`DELETE FROM finance_transactions WHERE user_id = $1`, [userId]);
   },
 
@@ -190,20 +213,42 @@ export const financeRepository = {
     let insertedCount = 0;
 
     for (const tx of transactions) {
+      const amountPaise =
+        tx.amountPaise !== undefined
+          ? tx.amountPaise
+          : Math.round(Number(tx.amount || 0) * 100);
+      const balancePaise =
+        tx.balancePaise !== undefined
+          ? tx.balancePaise
+          : tx.balance !== undefined && tx.balance !== null
+          ? Math.round(Number(tx.balance) * 100)
+          : null;
+      const isExpense = tx.isExpense !== undefined ? tx.isExpense : tx.type === 'debit';
+      const direction = tx.direction || tx.type || 'debit';
+      const source = tx.source || 'sms';
+      const emailId = tx.emailId || null;
+
       const res = await db.query(
         `INSERT INTO finance_transactions 
-         (id, user_id, amount, type, bank_name, account_mask, merchant, balance, due_date, category, raw_body, date)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         (id, user_id, amount, type, bank_name, account_mask, merchant, balance, due_date, category, raw_body, date, amount_paise, balance_paise, is_expense, direction, ref_id, source, email_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
          ON CONFLICT (id) DO UPDATE SET
            amount = EXCLUDED.amount,
            balance = COALESCE(EXCLUDED.balance, finance_transactions.balance),
-           due_date = COALESCE(EXCLUDED.due_date, finance_transactions.due_date)
+           due_date = COALESCE(EXCLUDED.due_date, finance_transactions.due_date),
+           amount_paise = EXCLUDED.amount_paise,
+           balance_paise = COALESCE(EXCLUDED.balance_paise, finance_transactions.balance_paise),
+           is_expense = EXCLUDED.is_expense,
+           direction = EXCLUDED.direction,
+           ref_id = COALESCE(EXCLUDED.ref_id, finance_transactions.ref_id),
+           source = COALESCE(EXCLUDED.source, finance_transactions.source),
+           email_id = COALESCE(EXCLUDED.email_id, finance_transactions.email_id)
          RETURNING id`,
         [
           tx.id,
           userId,
           tx.amount,
-          tx.type,
+          direction,
           tx.bankName,
           tx.accountMask || null,
           tx.merchant || null,
@@ -212,12 +257,46 @@ export const financeRepository = {
           tx.category || 'general',
           tx.rawBody,
           tx.date,
+          amountPaise,
+          balancePaise,
+          isExpense,
+          direction,
+          tx.refId || null,
+          source,
+          emailId,
         ]
       );
       if (res.length > 0) insertedCount++;
     }
 
     return insertedCount;
+  },
+
+  async getPotentialCreditEmails(userId = DEFAULT_USER_ID) {
+    await this.ensureTablesExist();
+    return db.query(
+      `SELECT 
+         e.id, 
+         e.subject, 
+         e.preview, 
+         e.content, 
+         e.from_name, 
+         e.from_email, 
+         e.received_at, 
+         e.account_id,
+         a.email as account_email
+       FROM emails e
+       JOIN email_accounts a ON a.id = e.account_id
+       WHERE a.user_id = $1
+         AND (
+           e.subject ~* '(salary|credited|credit|deposited|payroll|pension|stipend|neft.*cr|imps.*cr|inward)'
+           OR e.content ~* '(salary|credited|credit|deposited|payroll|pension|stipend|neft.*cr|imps.*cr|inward)'
+           OR e.preview ~* '(salary|credited|credit|deposited|payroll|pension|stipend|neft.*cr|imps.*cr|inward)'
+         )
+       ORDER BY e.received_at DESC
+       LIMIT 100`,
+      [userId]
+    );
   },
 
   async getTransactions(userId = DEFAULT_USER_ID, type?: string, limit = 100) {

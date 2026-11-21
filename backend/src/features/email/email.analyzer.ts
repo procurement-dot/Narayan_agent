@@ -2,7 +2,7 @@ import { env } from '../../config/env.js';
 
 export interface AiAnalysisResult {
   scope: 'work' | 'personal';
-  kind: 'meeting' | 'task' | 'noise';
+  kind: 'meeting' | 'task' | 'noise' | 'unwanted';
   confidence: 'High' | 'Medium' | 'Low';
   proposal?: {
     type: 'meeting' | 'task';
@@ -14,6 +14,8 @@ export interface AiAnalysisResult {
     confidence: 'High' | 'Medium' | 'Low';
   };
   draftReply: string;
+  isUnwanted?: boolean;
+  unwantedReason?: string;
 }
 
 export const emailAnalyzer = {
@@ -36,14 +38,19 @@ ${email.content.slice(0, 3000)}
 
 Instructions:
 1. Classify:
-   - "kind": MUST be one of ["meeting", "task", "noise"].
+   - "kind": MUST be one of ["meeting", "task", "noise", "unwanted"].
      * "meeting": An explicit request or suggestion to meet, call, or schedule a session.
      * "task": A concrete action item, review request, deliverable, or deadline requested.
-     * "noise": Promotional email, newsletter, social notification, receipt, or automated alert.
+     * "noise": Generic informational update, transactional alert, receipt.
+     * "unwanted": Marketing promotion, spam, cold sales pitch, unwanted newsletter, advertisement, or junk.
    - "scope": "work" or "personal".
    - "confidence": "High", "Medium", or "Low".
 
-2. Extract Action / Meeting Proposal:
+2. Unwanted Email Detection:
+   - "isUnwanted": Set to true if this email is promotional marketing, sale pitch, newsletter digest, advertising blast, cold outreach, or spam.
+   - "unwantedReason": A crisp explanation in 3-8 words (e.g. "Promotional sale & discount offer", "Automated marketing newsletter", "Unsolicited cold sales pitch", "Social media alert / spam"). Set to "" if not unwanted.
+
+3. Extract Action / Meeting Proposal:
    - If "kind" is "meeting" or "task", generate a proposal object with:
      * "type": "meeting" or "task"
      * "title": Short, crisp title (max 50 chars).
@@ -52,18 +59,20 @@ Instructions:
      * "detail": 1-2 sentence context explaining what needs to happen.
      * "evidence": An EXACT VERBATIM sentence quoted word-for-word from the email text that justifies this proposal.
      * "confidence": "High", "Medium", or "Low".
-   - If "kind" is "noise", do not generate a proposal.
+   - If "kind" is "noise" or "unwanted", do not generate a proposal.
 
-3. Draft Reply:
+4. Draft Reply:
    - Always write a calm, courteous, professional reply in Narayan's executive voice (2-3 sentences max).
    - Keep it concise, respectful, and clear.
-   - For announcements or newsletters, write a polite acknowledgment or expression of interest. Never leave draftReply empty.
+   - For announcements, sales, or newsletters, write a polite acknowledgment or leave standard acknowledgment. Never leave draftReply empty.
 
 Respond ONLY with valid JSON matching this schema:
 {
   "scope": "work" | "personal",
-  "kind": "meeting" | "task" | "noise",
+  "kind": "meeting" | "task" | "noise" | "unwanted",
   "confidence": "High" | "Medium" | "Low",
+  "isUnwanted": boolean,
+  "unwantedReason": "string",
   "proposal": {
     "type": "meeting" | "task",
     "title": "string",
@@ -101,17 +110,21 @@ Respond ONLY with valid JSON matching this schema:
         .trim();
 
       const parsed = JSON.parse(cleanJson);
+      const isUnwanted = Boolean(parsed.isUnwanted) || parsed.kind === 'unwanted';
+      const unwantedReason = parsed.unwantedReason || (isUnwanted ? 'Promotional or automated mail' : '');
 
       return {
         scope: parsed.scope === 'personal' ? 'personal' : 'work',
-        kind: ['meeting', 'task', 'noise'].includes(parsed.kind)
+        kind: ['meeting', 'task', 'noise', 'unwanted'].includes(parsed.kind)
           ? parsed.kind
-          : 'task',
+          : isUnwanted ? 'unwanted' : 'task',
         confidence: ['High', 'Medium', 'Low'].includes(parsed.confidence)
           ? parsed.confidence
           : 'High',
+        isUnwanted,
+        unwantedReason,
         proposal:
-          parsed.proposal && parsed.proposal.title
+          parsed.proposal && parsed.proposal.title && !isUnwanted
             ? {
                 type: parsed.proposal.type === 'meeting' ? 'meeting' : 'task',
                 title: parsed.proposal.title,
@@ -137,16 +150,37 @@ Respond ONLY with valid JSON matching this schema:
   }): AiAnalysisResult {
     const text = (email.subject + ' ' + email.content).toLowerCase();
     const isMeeting = /meet|call|zoom|calendar|schedule|timing|at \d|pm|am/i.test(text);
-    const isNoise = /unsubscribe|newsletter|promotions|digest|receipt|bill/i.test(text);
+    const isUnwanted = /unsubscribe|newsletter|promotions|promo|discount|sale|limited offer|deal of the day|best price|click here|sponsored|advertisement|shop now|hurry|coupon|webinar/i.test(text);
+    const isNoise = /receipt|bill|invoice|statement|otp|verification code|security alert/i.test(text);
 
-    const kind = isNoise ? 'noise' : isMeeting ? 'meeting' : 'task';
+    let kind: 'meeting' | 'task' | 'noise' | 'unwanted' = 'task';
+    let unwantedReason = '';
+
+    if (isUnwanted) {
+      kind = 'unwanted';
+      if (/sale|discount|deal|coupon|shop/i.test(text)) {
+        unwantedReason = 'Promotional discount & sales offer';
+      } else if (/newsletter|digest/i.test(text)) {
+        unwantedReason = 'Automated newsletter digest';
+      } else if (/unsubscribe/i.test(text)) {
+        unwantedReason = 'Marketing mailer with unsubscribe';
+      } else {
+        unwantedReason = 'Automated promotional noise';
+      }
+    } else if (isNoise) {
+      kind = 'noise';
+    } else if (isMeeting) {
+      kind = 'meeting';
+    }
 
     return {
       scope: 'work',
       kind,
       confidence: 'Medium',
+      isUnwanted,
+      unwantedReason,
       proposal:
-        kind !== 'noise'
+        kind === 'meeting' || kind === 'task'
           ? {
               type: kind === 'meeting' ? 'meeting' : 'task',
               title: email.subject.slice(0, 45),
@@ -158,7 +192,7 @@ Respond ONLY with valid JSON matching this schema:
             }
           : undefined,
       draftReply:
-        kind !== 'noise'
+        kind !== 'unwanted' && kind !== 'noise'
           ? `Thank you. I have received your email regarding "${email.subject}" and am reviewing it.`
           : '',
     };
