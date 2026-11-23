@@ -16,7 +16,7 @@ import { EmailTabs } from '../components/EmailTabs';
 import { ProposalSheet } from '../components/ProposalSheet';
 import { SourceActionsCard } from '../components/SourceActionsCard';
 import { TrustFooter } from '../components/TrustFooter';
-import { EmailConnectionBar } from '../components/EmailConnectionBar';
+import { EmailFilterPills } from '../components/EmailFilterPills';
 import { UnwantedCleanUpBanner } from '../components/UnwantedCleanUpBanner';
 
 export const EmailScreen: React.FC = () => {
@@ -264,8 +264,8 @@ export const EmailScreen: React.FC = () => {
         {/* Header */}
         <EmailHeader onBack={goBack} />
 
-        {/* Gmail OAuth 2.0 Connection Bar */}
-        <EmailConnectionBar />
+        {/* Email Inboxes Filter Pills */}
+        <EmailFilterPills />
 
         {/* Intelligence Summary Card */}
         <EmailSummaryCard

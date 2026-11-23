@@ -196,9 +196,13 @@ function renderErrorPage(errMsg: string) {
       </head>
       <body>
         <div class="card">
-          <div class="badge">✓</div>
-          <h2>Gmail Connected</h2>
-          <p>Your Gmail account has been successfully linked. Return to the app to view your inbox.</p>
+          <div class="badge" style="background: #fde8e8; color: #b91c1c;">✕</div>
+          <h2>Connection Status</h2>
+          <p style="color: #6e756e; font-size: 14px; margin-bottom: 20px;">
+            ${errMsg.includes('invalid_grant')
+              ? 'This authorization link has already been used or expired. If your account was already connected, you can safely return to the app.'
+              : errMsg}
+          </p>
           <a href="nryn://email?connected=true" class="btn">Return to Narayan App ➔</a>
         </div>
         <script>

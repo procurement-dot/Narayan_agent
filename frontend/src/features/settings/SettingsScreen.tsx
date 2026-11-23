@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { useSettingsStore } from './settings.store';
 import { useEmailUiStore } from '../email/store/emailUi.store';
+import { EmailAccountsCard } from '../email/components/EmailAccountsCard';
 import { lockScreenService } from '../calendar/lockScreen.service';
 import { AppHeader } from '../navigation/AppHeader';
 import { AiModelChoice } from './settings.types';
@@ -114,6 +115,9 @@ export const SettingsScreen: React.FC = () => {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* Email Accounts (Multi-Inbox Management) */}
+        <EmailAccountsCard />
+
         {/* Connections & Permissions */}
         <View style={styles.card}>
           <Text style={styles.cardKicker}>DATA INTEGRATIONS</Text>
