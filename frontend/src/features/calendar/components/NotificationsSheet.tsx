@@ -59,7 +59,7 @@ export const NotificationsSheet: React.FC = () => {
     try {
       setActingId(id);
       await dismissNotification(id);
-      showToast('Notification dismissed', 'info');
+      showToast('Approval dismissed', 'info');
     } catch {
       showToast('Failed to dismiss', 'warning');
     } finally {
@@ -77,7 +77,7 @@ export const NotificationsSheet: React.FC = () => {
           {/* Header */}
           <View style={styles.headerRow}>
             <View style={styles.titleWithBadge}>
-              <Text style={styles.sheetTitle}>🔔 Notifications & Proposals</Text>
+              <Text style={styles.sheetTitle}>🔔 Approvals</Text>
               {notifications.length > 0 && (
                 <View style={styles.countBadge}>
                   <Text style={styles.countBadgeText}>{notifications.length}</Text>
@@ -143,14 +143,14 @@ export const NotificationsSheet: React.FC = () => {
             {isLoadingNotifications ? (
               <View style={styles.emptyContainer}>
                 <ActivityIndicator size="small" color="#2d5a3e" />
-                <Text style={styles.emptyText}>Loading proposals...</Text>
+                <Text style={styles.emptyText}>Loading approvals...</Text>
               </View>
             ) : filteredNotifications.length === 0 ? (
               <View style={styles.emptyContainer}>
                 <Text style={styles.emptyIcon}>✓</Text>
                 <Text style={styles.emptyTitle}>All caught up!</Text>
                 <Text style={styles.emptyText}>
-                  No pending proposals. All meetings, tasks and bills are already reviewed.
+                  No pending approvals. All meetings, tasks and bills are already reviewed.
                 </Text>
               </View>
             ) : (

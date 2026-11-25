@@ -48,8 +48,6 @@ export const EmailFilterPills: React.FC = () => {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        <Text style={styles.filterLabel}>Filter:</Text>
-
         <TouchableOpacity
           style={[styles.pill, selectedAccountEmail === 'all' && styles.pillActive]}
           onPress={() => setSelectedAccountEmail('all')}
@@ -61,15 +59,14 @@ export const EmailFilterPills: React.FC = () => {
               selectedAccountEmail === 'all' && styles.pillTextActive,
             ]}
           >
-            All Inboxes ({accounts.length})
+            All ({accounts.length})
           </Text>
         </TouchableOpacity>
 
         {accounts.map((acc, idx) => {
           const isActive = selectedAccountEmail.toLowerCase() === acc.email.toLowerCase();
           const shortName = acc.email.split('@')[0];
-          const domain = acc.email.split('@')[1]?.split('.')[0] || '';
-          const pillLabel = idx === 0 ? `Primary: ${shortName}` : `${shortName}@${domain}`;
+          const pillLabel = shortName;
 
           return (
             <TouchableOpacity
@@ -89,14 +86,15 @@ export const EmailFilterPills: React.FC = () => {
         })}
       </ScrollView>
 
-      {/* Settings shortcut button */}
+      {/* Add / Manage accounts shortcut button */}
       <TouchableOpacity
         style={styles.settingsShortcut}
         onPress={() => navigate('settings')}
         activeOpacity={0.7}
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        accessibilityLabel="Add or manage accounts"
       >
-        <Text style={styles.settingsShortcutText}>⚙ Manage</Text>
+        <Text style={styles.settingsShortcutText}>＋</Text>
       </TouchableOpacity>
     </View>
   );
@@ -106,6 +104,7 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginTop: spacing.md,
     marginBottom: spacing.md,
     backgroundColor: '#f7f9f7',
     paddingVertical: 7,
@@ -148,18 +147,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   settingsShortcut: {
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: radii.sm,
+    width: 28,
+    height: 28,
+    borderRadius: radii.pill,
     backgroundColor: '#edf5ee',
     borderWidth: 1,
     borderColor: '#d2e4d5',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginLeft: 6,
   },
   settingsShortcutText: {
-    fontSize: 11,
-    color: '#3d5c43',
-    fontFamily: typography.fontFamily.uiMedium,
+    fontSize: 15,
+    lineHeight: 17,
+    color: '#265430',
+    fontWeight: '700',
   },
   emptyContainer: {
     backgroundColor: '#f6f7f3',

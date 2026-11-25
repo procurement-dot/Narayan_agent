@@ -415,11 +415,12 @@ export const CalendarScreen: React.FC = () => {
               )}
             </TouchableOpacity>
 
-            {/* Notification Bell Button */}
+            {/* Approval Bell Button */}
             <TouchableOpacity
               style={styles.bellHeaderBtn}
               onPress={openNotifications}
               activeOpacity={0.7}
+              accessibilityLabel="Approvals"
             >
               <Text style={styles.bellIconText}>🔔</Text>
               {unreadNotificationsCount > 0 && (

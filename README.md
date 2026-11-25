@@ -78,7 +78,7 @@ npm run start
 | **Kickstart** | `kickstart` | 3-minute audio briefing card (Play/Pause), timeline items (Weather, News, Astrology). |
 | **Health** | `health` | Resting HR (52 bpm), 7h 25m sleep, 12-week marathon plan, Vitals profile, Journal reflection. |
 | **People** | `inbox` | Relationships (Neha, Prayan, Abhijit), WhatsApp intelligence with suggested reply drafts. |
-| **Email** | `email` | Needs me, Meetings, All, Low signal, Drafts, Extracted action approval, Trust footer. |
+| **Email** | `email` | Needs me, Meetings, All, Drafts, Extracted action approval, Trust footer. |
 | **Money** | `finance` | ₹5.03 Cr Net worth, Real estate assets with rental yield, Lending portfolio, Retirement runway. |
 | **Work** | `work` | Executive KPIs, Active projects (AKC Cup, Manjalpur Sports School), EA extracted signals. |
 | **Prayan** | `prayan` | Child development space: 3x3 Speedcubing PBs (14.82s), maker robotics, parenting inquiry. |

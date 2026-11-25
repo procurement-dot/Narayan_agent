@@ -317,6 +317,6 @@ export const calendarService = {
     notificationId: string
   ): Promise<{ success: boolean; message: string }> {
     await calendarRepository.dismissNotification(userId, notificationId);
-    return { success: true, message: 'Notification dismissed' };
+    return { success: true, message: 'Approval dismissed' };
   },
 };

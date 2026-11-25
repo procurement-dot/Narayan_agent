@@ -18,6 +18,8 @@ import { SourceActionsCard } from '../components/SourceActionsCard';
 import { TrustFooter } from '../components/TrustFooter';
 import { EmailFilterPills } from '../components/EmailFilterPills';
 import { UnwantedCleanUpBanner } from '../components/UnwantedCleanUpBanner';
+import { NotificationsSheet } from '../../calendar/components/NotificationsSheet';
+import { useCalendarStore } from '../../calendar/calendar.store';
 
 export const EmailScreen: React.FC = () => {
   const { showToast } = useToast();
@@ -58,6 +60,8 @@ export const EmailScreen: React.FC = () => {
     checkOAuthStatus();
     fetchSummary();
     fetchEmails();
+    useCalendarStore.getState().fetchNotifications();
+    useCalendarStore.getState().fetchNotificationsCount();
 
     // Instant silent sync on mount
     syncEmails({ silent: true }).catch(() => {});
@@ -267,40 +271,8 @@ export const EmailScreen: React.FC = () => {
         {/* Email Inboxes Filter Pills */}
         <EmailFilterPills />
 
-        {/* Intelligence Summary Card */}
-        <EmailSummaryCard
-          requestsCount={summary.requests}
-          lowSignalCount={summary.lowSignal}
-          onReviewActions={() => openProposal('akc')}
-        />
-
         {/* Tabs */}
         <EmailTabs activeTab={mailTab} onSelectTab={setMailTab} />
-
-        {/* Active Account Filter Chip */}
-        {selectedAccountEmail !== 'all' && (
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              backgroundColor: '#edf5ef',
-              paddingHorizontal: 12,
-              paddingVertical: 7,
-              borderRadius: 10,
-              marginBottom: 10,
-              borderWidth: 1,
-              borderColor: '#cce2d1',
-            }}
-          >
-            <Text style={{ fontSize: 12, color: '#274f31' }}>
-              Filtered by: <Text style={{ fontWeight: '700' }}>{selectedAccountEmail}</Text>
-            </Text>
-            <TouchableOpacity onPress={() => setSelectedAccountEmail('all')}>
-              <Text style={{ fontSize: 11, color: '#7a3f3f', fontWeight: '600' }}>Show all inboxes ✕</Text>
-            </TouchableOpacity>
-          </View>
-        )}
 
         {/* AI Clean-up Banner for Unwanted Tab */}
         {mailTab === 'unwanted' && (
@@ -329,7 +301,7 @@ export const EmailScreen: React.FC = () => {
             <View style={emailStyles.emptyContainer}>
               <Text style={emailStyles.emptyText}>
                 {mailTab === 'priority'
-                  ? 'No action-required requests found in your recent emails. Tap "All email" or "Low signal" above to see all synced messages.'
+                  ? 'No action-required requests found in your recent emails. Tap "All email" above to see all synced messages.'
                   : mailTab === 'meetings'
                   ? 'No meeting requests found. Tap "All email" to view all synced messages.'
                   : mailTab === 'unwanted'
@@ -374,6 +346,9 @@ export const EmailScreen: React.FC = () => {
         onDismiss={handleDismissProposal}
         onApprove={handleApproveProposal}
       />
+
+      {/* Approvals Sheet */}
+      <NotificationsSheet />
     </View>
   );
 };

@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NRYN Calendar – UI Proposal</title>
+<style>
+  :root{
+    --bg:#fdfcf9; --paper:#fff; --ink:#292e29; --ink2:#525a52; --muted:#8b928b;
+    --accent:#cd8167; --accentDark:#ae613f; --accentWash:#f7eee8;
+    --sage:#769082; --sageWash:#edf4ef; --sageDark:#526b5d; --line:#eceae4;
+    --green:#89aa94; --peach:#d4805c; --purple:#a69bbe; --gray:#afb4ae;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Segoe UI",Roboto,sans-serif;background:#eeece6;color:var(--ink);padding:32px 20px 60px}
+  h1{font-family:Georgia,serif;font-weight:400;font-size:28px;text-align:center}
+  .lead{text-align:center;color:var(--ink2);font-size:14px;margin:6px 0 28px}
+  .row{display:flex;gap:28px;justify-content:center;flex-wrap:wrap}
+  .col{display:flex;flex-direction:column;align-items:center;gap:12px}
+  .cap{font-size:12px;letter-spacing:1.2px;color:var(--muted);text-transform:uppercase}
+  .phone{width:340px;height:700px;background:var(--bg);border-radius:38px;border:8px solid #1f2420;overflow:hidden;position:relative;box-shadow:0 20px 50px rgba(0,0,0,.18)}
+  .scr{height:100%;overflow:hidden;display:flex;flex-direction:column}
+  /* header */
+  .hdr{padding:18px 18px 8px;display:flex;align-items:flex-end;justify-content:space-between}
+  .kick{font-size:10px;letter-spacing:1.3px;color:var(--accentDark);font-weight:600}
+  .date{font-family:Georgia,serif;font-size:26px;line-height:30px}
+  .icons{display:flex;gap:8px}
+  .ib{width:34px;height:34px;border-radius:50%;background:var(--paper);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:14px;position:relative;color:var(--ink2)}
+  .badge{position:absolute;top:-3px;right:-3px;background:var(--accent);color:#fff;font-size:9px;border-radius:9px;padding:1px 5px;font-weight:700}
+  .seg{margin:6px 18px 0;display:flex;background:#f1f0ea;border-radius:12px;padding:3px}
+  .seg div{flex:1;text-align:center;font-size:12px;padding:6px 0;border-radius:9px;color:var(--ink2)}
+  .seg .on{background:var(--paper);color:var(--ink);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+  /* week strip */
+  .week{display:flex;justify-content:space-between;padding:12px 14px 8px}
+  .wd{width:38px;text-align:center;padding:6px 0 7px;border-radius:12px}
+  .wd .l{font-size:10px;color:var(--muted)}
+  .wd .n{font-size:15px;margin-top:2px}
+  .wd .dots{display:flex;gap:2px;justify-content:center;height:5px;margin-top:4px}
+  .wd .dots i{width:4px;height:4px;border-radius:2px;display:block}
+  .wd.sel{background:var(--sageDark);color:#fff}.wd.sel .l{color:#cfdcd3}
+  .wd.today .n{color:var(--accentDark);font-weight:700}
+  /* summary strip */
+  .sum{margin:2px 18px 8px;display:flex;gap:6px}
+  .chip{font-size:11px;padding:5px 9px;border-radius:20px;background:var(--paper);border:1px solid var(--line);color:var(--ink2);white-space:nowrap}
+  .chip.rev{background:var(--accentWash);border-color:#ecc9b8;color:var(--accentDark);font-weight:600}
+  /* timeline */
+  .tl{flex:1;position:relative;overflow:hidden;border-top:1px solid var(--line)}
+  .hr{position:absolute;left:0;right:0;height:1px;background:var(--line)}
+  .hl{position:absolute;left:14px;font-size:10px;color:var(--muted);transform:translateY(-6px);background:var(--bg);padding-right:4px}
+  .ev{position:absolute;left:54px;right:14px;border-radius:12px;padding:7px 10px;font-size:12px;overflow:hidden}
+  .ev .t{font-weight:600;color:#354238}
+  .ev .m{font-size:10.5px;color:#6b7269;margin-top:2px;display:flex;gap:6px;align-items:center}
+  .src{font-size:9px;padding:1px 5px;border-radius:5px;background:rgba(255,255,255,.7);color:var(--ink2)}
+  .g{background:#ecf3ee;border-left:3px solid var(--green)}
+  .p{background:#fbefe8;border-left:3px solid var(--peach)}
+  .u{background:#f1eff7;border-left:3px solid var(--purple)}
+  .ghost{background:repeating-linear-gradient(135deg,#fff,#fff 6px,#faf6f2 6px,#faf6f2 12px);border:1.5px dashed var(--accent);}
+  .ghost .acts{position:absolute;right:8px;top:8px;display:flex;gap:5px}
+  .ghost .acts span{width:24px;height:24px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:12px}
+  .ok{background:var(--sageDark);color:#fff}.no{background:#fff;border:1px solid var(--line);color:var(--muted)}
+  .free{position:absolute;left:54px;right:14px;font-size:10.5px;color:var(--sage);display:flex;align-items:center;gap:6px}
+  .free:before,.free:after{content:"";flex:1;border-top:1px dotted #b9c8be}
+  .now{position:absolute;left:44px;right:0;height:2px;background:var(--accent)}
+  .now:before{content:"";position:absolute;left:-4px;top:-4px;width:10px;height:10px;border-radius:5px;background:var(--accent)}
+  .nowt{position:absolute;left:6px;font-size:10px;font-weight:700;color:#fff;background:var(--accent);padding:1px 4px;border-radius:5px;transform:translateY(-7px)}
+  .collapsed{position:absolute;left:54px;right:14px;font-size:10.5px;color:var(--muted);text-align:center;background:#f4f3ee;border-radius:8px;padding:4px}
+  .fab{position:absolute;right:18px;bottom:20px;height:48px;padding:0 18px;border-radius:24px;background:var(--ink);color:#fff;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;box-shadow:0 8px 20px rgba(0,0,0,.2)}
+  .fab b{font-size:20px;font-weight:400}
+  /* month */
+  .mhead{display:flex;justify-content:space-between;align-items:center;padding:12px 18px 6px}
+  .mhead .mt{font-family:Georgia,serif;font-size:19px}
+  .mhead .nav{color:var(--muted);font-size:18px;letter-spacing:12px}
+  .grid{display:grid;grid-template-columns:repeat(7,1fr);padding:0 10px;row-gap:2px}
+  .grid .wh{font-size:10px;color:var(--muted);text-align:center;padding:4px 0}
+  .c{height:44px;text-align:center;font-size:13px;padding-top:6px;border-radius:12px}
+  .c .dots{display:flex;gap:2px;justify-content:center;margin-top:5px}
+  .c .dots i{width:4px;height:4px;border-radius:2px;display:block}
+  .c.dim{color:#c9ccc6}
+  .c.sel{background:var(--sageDark);color:#fff}
+  .c.today{color:var(--accentDark);font-weight:700;box-shadow:inset 0 0 0 1.5px var(--accent)}
+  .heat1{background:#f6f8f5}.heat2{background:#e9f0eb}.heat3{background:#dbe7de}
+  .agenda{flex:1;margin-top:10px;background:var(--paper);border-top-left-radius:22px;border-top-right-radius:22px;box-shadow:0 -4px 16px rgba(0,0,0,.05);padding:10px 18px}
+  .handle{width:36px;height:4px;border-radius:2px;background:#dcdcd5;margin:0 auto 10px}
+  .ah{display:flex;justify-content:space-between;font-size:10px;letter-spacing:1.2px;color:var(--muted);margin-bottom:6px}
+  .ah a{color:var(--accentDark);letter-spacing:0;font-size:11px}
+  .ai{display:flex;gap:12px;padding:9px 0;border-bottom:1px solid var(--line);align-items:center}
+  .ai .tm{width:40px;font-size:11px;color:var(--ink2)}
+  .ai .bar{width:3px;align-self:stretch;border-radius:2px}
+  .ai .tt{font-size:13px;color:#354238;font-weight:500}
+  .ai .st{font-size:11px;color:var(--muted)}
+  .ai .ic{margin-left:auto;font-size:11px;color:var(--muted)}
+  /* sheet */
+  .dimmed{position:absolute;inset:0;background:rgba(26,35,28,.36)}
+  .sheet{position:absolute;left:0;right:0;bottom:0;background:var(--paper);border-top-left-radius:25px;border-top-right-radius:25px;padding:12px 18px 22px}
+  .sheet h3{font-family:Georgia,serif;font-weight:400;font-size:20px;margin-bottom:10px}
+  .nl{border:1.5px solid var(--sage);border-radius:14px;padding:12px;font-size:14px}
+  .nl .hint{font-size:11px;color:var(--muted);margin-top:6px}
+  .parsed{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 14px}
+  .parsed span{font-size:11px;background:var(--sageWash);color:#386345;padding:5px 9px;border-radius:20px}
+  .lab{font-size:10px;letter-spacing:1.2px;color:var(--muted);margin:10px 0 6px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chips span{font-size:12px;padding:6px 11px;border-radius:20px;border:1px solid var(--line);color:var(--ink2)}
+  .chips .on{background:var(--ink);border-color:var(--ink);color:#fff}
+  .kind{display:flex;gap:6px}
+  .kind span{flex:1;text-align:center;font-size:11px;padding:8px 0;border-radius:12px;border:1px solid var(--line)}
+  .tog{display:flex;justify-content:space-between;align-items:center;margin-top:14px;font-size:13px;color:var(--ink2)}
+  .sw{width:38px;height:22px;border-radius:11px;background:var(--sageDark);position:relative}
+  .sw:after{content:"";position:absolute;right:2px;top:2px;width:18px;height:18px;border-radius:9px;background:#fff}
+  .save{margin-top:16px;background:var(--ink);color:#fff;text-align:center;border-radius:14px;padding:13px;font-weight:600;font-size:14px}
+  /* notes */
+  .notes{max-width:1100px;margin:40px auto 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+  .note{background:var(--paper);border-radius:18px;padding:18px 20px;border:1px solid var(--line)}
+  .note h4{font-family:Georgia,serif;font-weight:400;font-size:17px;margin-bottom:8px}
+  .note li{font-size:13px;color:var(--ink2);line-height:1.55;margin-left:16px;margin-bottom:4px}
+  .note .was{font-size:11px;color:var(--accentDark);margin-bottom:8px}
+</style>
+</head>
+<body>
+<h1>NRYN Calendar — UI proposal</h1>
+<p class="lead">Same colours and fonts as your current tokens. Less on the header, more for the day itself.</p>
+
+<div class="row">
+  <!-- DAY VIEW -->
+  <div class="col">
+    <div class="cap">1 · Day view</div>
+    <div class="phone"><div class="scr">
+      <div class="hdr">
+        <div><div class="kick">TODAY · 3 LEFT</div><div class="date">Tue, 24 Nov</div></div>
+        <div class="icons"><div class="ib">☰</div><div class="ib">↻</div><div class="ib">🔔<span class="badge">3</span></div></div>
+      </div>
+      <div class="seg"><div class="on">Day</div><div>Week</div><div>Month</div></div>
+      <div class="week">
+        <div class="wd"><div class="l">M</div><div class="n">23</div><div class="dots"><i style="background:var(--green)"></i><i style="background:var(--peach)"></i></div></div>
+        <div class="wd sel today"><div class="l">T</div><div class="n">24</div><div class="dots"><i style="background:#fff"></i><i style="background:#fff"></i><i style="background:#fff"></i></div></div>
+        <div class="wd"><div class="l">W</div><div class="n">25</div><div class="dots"><i style="background:var(--purple)"></i></div></div>
+        <div class="wd"><div class="l">T</div><div class="n">26</div><div class="dots"></div></div>
+        <div class="wd"><div class="l">F</div><div class="n">27</div><div class="dots"><i style="background:var(--peach)"></i><i style="background:var(--peach)"></i></div></div>
+        <div class="wd"><div class="l">S</div><div class="n">28</div><div class="dots"><i style="background:var(--green)"></i></div></div>
+        <div class="wd"><div class="l">S</div><div class="n">29</div><div class="dots"></div></div>
+      </div>
+      <div class="sum"><span class="chip">5 events</span><span class="chip">3h 40m booked</span><span class="chip rev">2 to review →</span></div>
+      <div class="tl">
+        <div class="collapsed" style="top:6px">00:00 – 06:00 · sleep · tap to expand</div>
+        <div class="hr" style="top:40px"></div><div class="hl" style="top:40px">07</div>
+        <div class="hr" style="top:110px"></div><div class="hl" style="top:110px">08</div>
+        <div class="hr" style="top:180px"></div><div class="hl" style="top:180px">09</div>
+        <div class="hr" style="top:250px"></div><div class="hl" style="top:250px">10</div>
+        <div class="hr" style="top:320px"></div><div class="hl" style="top:320px">11</div>
+        <div class="hr" style="top:390px"></div><div class="hl" style="top:390px">12</div>
+        <div class="hr" style="top:460px"></div><div class="hl" style="top:460px">13</div>
+        <div class="ev g" style="top:43px;height:44px"><div class="t">Easy run · 6k</div><div class="m">07:00 – 07:40 <span class="src">🏃 Health</span></div></div>
+        <div class="free" style="top:118px">1h 20m free</div>
+        <div class="ev p" style="top:183px;height:66px"><div class="t">AKC Cup sponsor call</div><div class="m">09:00 – 10:00 <span class="src">G</span></div></div>
+        <div class="now" style="top:228px"></div><div class="nowt" style="top:228px">09:39</div>
+        <div class="ev ghost" style="top:288px;height:58px"><div class="t">Review Manjalpur proposal</div><div class="m">10:30 – 11:15 <span class="src">✉ suggested</span></div><div class="acts"><span class="no">✕</span><span class="ok">✓</span></div></div>
+        <div class="ev u" style="top:393px;height:100px"><div class="t">Deep work · Q4 plan</div><div class="m">12:00 – 13:30 <span class="src">📝 MoM</span></div></div>
+      </div>
+      <div class="fab"><b>＋</b> Add</div>
+    </div></div>
+  </div>
+
+  <!-- MONTH VIEW -->
+  <div class="col">
+    <div class="cap">2 · Month view</div>
+    <div class="phone"><div class="scr">
+      <div class="hdr">
+        <div><div class="kick">NOV 2026 · 38 EVENTS</div><div class="date">Month</div></div>
+        <div class="icons"><div class="ib">☰</div><div class="ib">↻</div><div class="ib">🔔<span class="badge">3</span></div></div>
+      </div>
+      <div class="seg"><div>Day</div><div>Week</div><div class="on">Month</div></div>
+      <div class="mhead"><div class="mt">November</div><div class="nav">‹ ›</div></div>
+      <div class="grid">
+        <div class="wh">M</div><div class="wh">T</div><div class="wh">W</div><div class="wh">T</div><div class="wh">F</div><div class="wh">S</div><div class="wh">S</div>
+        <div class="c dim">26</div><div class="c dim">27</div><div class="c dim">28</div><div class="c dim">29</div><div class="c dim">30</div><div class="c dim">31</div>
+        <div class="c heat1">1<div class="dots"><i style="background:var(--green)"></i></div></div>
+        <div class="c heat2">2<div class="dots"><i style="background:var(--peach)"></i><i style="background:var(--green)"></i></div></div>
+        <div class="c">3</div>
+        <div class="c heat3">4<div class="dots"><i style="background:var(--peach)"></i><i style="background:var(--peach)"></i><i style="background:var(--purple)"></i></div></div>
+        <div class="c heat1">5<div class="dots"><i style="background:var(--green)"></i></div></div>
+        <div class="c">6</div><div class="c">7</div><div class="c">8</div>
+        <div class="c heat2">9<div class="dots"><i style="background:var(--peach)"></i><i style="background:var(--purple)"></i></div></div>
+        <div class="c heat1">10<div class="dots"><i style="background:var(--green)"></i></div></div>
+        <div class="c">11</div>
+        <div class="c heat3">12<div class="dots"><i style="background:var(--peach)"></i><i style="background:var(--peach)"></i><i style="background:var(--green)"></i></div></div>
+        <div class="c">13</div><div class="c">14</div><div class="c">15</div>
+        <div class="c heat2">16<div class="dots"><i style="background:var(--purple)"></i><i style="background:var(--green)"></i></div></div>
+        <div class="c">17</div>
+        <div class="c heat1">18<div class="dots"><i style="background:var(--peach)"></i></div></div>
+        <div class="c">19</div>
+        <div class="c heat2">20<div class="dots"><i style="background:var(--peach)"></i><i style="background:var(--green)"></i></div></div>
+        <div class="c">21</div><div class="c">22</div>
+        <div class="c heat2">23<div class="dots"><i style="background:var(--green)"></i><i style="background:var(--peach)"></i></div></div>
+        <div class="c sel">24<div class="dots"><i style="background:#fff"></i><i style="background:#fff"></i><i style="background:#fff"></i></div></div>
+        <div class="c heat1">25<div class="dots"><i style="background:var(--purple)"></i></div></div>
+        <div class="c">26</div>
+        <div class="c heat2">27<div class="dots"><i style="background:var(--peach)"></i><i style="background:var(--peach)"></i></div></div>
+        <div class="c heat1">28<div class="dots"><i style="background:var(--green)"></i></div></div>
+        <div class="c">29</div>
+      </div>
+      <div class="agenda">
+        <div class="handle"></div>
+        <div class="ah"><span>TODAY · TUE 24 NOV</span><a>Open day →</a></div>
+        <div class="ai"><div class="tm">07:00</div><div class="bar" style="background:var(--green)"></div><div><div class="tt">Easy run · 6k</div><div class="st">40 min</div></div><div class="ic">🏃</div></div>
+        <div class="ai"><div class="tm">09:00</div><div class="bar" style="background:var(--peach)"></div><div><div class="tt">AKC Cup sponsor call</div><div class="st">1 h · Google Meet</div></div><div class="ic">G</div></div>
+        <div class="ai"><div class="tm">12:00</div><div class="bar" style="background:var(--purple)"></div><div><div class="tt">Deep work · Q4 plan</div><div class="st">1 h 30 m</div></div><div class="ic">📝</div></div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- ADD SHEET -->
+  <div class="col">
+    <div class="cap">3 · Quick add</div>
+    <div class="phone"><div class="scr">
+      <div class="hdr"><div><div class="kick">TODAY</div><div class="date">Tue, 24 Nov</div></div></div>
+      <div class="dimmed"></div>
+      <div class="sheet">
+        <div class="handle"></div>
+        <h3>Add to your rhythm</h3>
+        <div class="nl">Call Abhijit tomorrow 4pm for 30 min<div class="hint">Type it naturally — NRYN fills the rest</div></div>
+        <div class="parsed"><span>📅 Wed 25 Nov</span><span>🕓 16:00 – 16:30</span><span>👥 People</span></div>
+        <div class="lab">DURATION</div>
+        <div class="chips"><span>15m</span><span class="on">30m</span><span>45m</span><span>1h</span><span>2h</span></div>
+        <div class="lab">TYPE</div>
+        <div class="kind">
+          <span style="background:#ecf3ee">🏃 Health</span>
+          <span style="background:#fbefe8">💼 Work</span>
+          <span style="background:#f1eff7;border-color:var(--purple)">👥 People</span>
+          <span>…</span>
+        </div>
+        <div class="tog"><span>Also add to Google Calendar</span><div class="sw"></div></div>
+        <div class="save">Save</div>
+      </div>
+    </div></div>
+  </div>
+</div>
+
+<div class="notes">
+  <div class="note"><h4>Header</h4><div class="was">Now: brand, date stamp, toggle, Sync, bell and Signals bar all stacked</div><ul>
+    <li>One big serif date, plus a small kicker like "TODAY · 3 LEFT"</li>
+    <li>Sync, bell and menu become 34px round icons on the right</li>
+    <li>Day / Week / Month segmented control</li>
+    <li>Signals bar becomes a single "2 to review" chip that opens the approvals sheet</li></ul></div>
+  <div class="note"><h4>Week strip (new)</h4><ul>
+    <li>Swipe the strip to change week, swipe the timeline to change day</li>
+    <li>Up to 3 coloured dots per day, one per event category</li>
+    <li>Replaces the "Today" jump button: tapping the date title returns to today</li></ul></div>
+  <div class="note"><h4>Timeline</h4><div class="was">Now: a ＋ button on every hour, card height capped at 110px</div><ul>
+    <li>Tap or long-press-drag on empty space to create; one floating "+ Add" button</li>
+    <li>Card height matches real duration, so a 90-min block looks 90 min long</li>
+    <li>"1h 20m free" markers in gaps; sleep hours collapsed</li>
+    <li>AI-suggested items appear as dashed ghost cards with ✓ / ✕ inline</li></ul></div>
+  <div class="note"><h4>Colour & tags</h4><div class="was">Now: 7 tag styles with different colours and emoji</div><ul>
+    <li>Colour = category (left bar and fill)</li>
+    <li>Source = one small neutral badge (G, ✉, 📝, 🏃)</li>
+    <li>So the colours always mean the same thing</li></ul></div>
+  <div class="note"><h4>Month view</h4><ul>
+    <li>Light green heat fill shows how busy each day is</li>
+    <li>Multi-colour dots instead of a single dot</li>
+    <li>Agenda as a draggable bottom sheet; pulling it up shrinks the month to one week (like Google Calendar)</li></ul></div>
+  <div class="note"><h4>Add task</h4><div class="was">Now: free-text HH:mm inputs and colour names (peach/green…)</div><ul>
+    <li>Natural-language input first, parsed into chips</li>
+    <li>Duration chips instead of typing an end time</li>
+    <li>Pick a type (Health/Work/People…) and let it set the colour</li>
+    <li>Google sync as a switch that remembers your last choice</li></ul></div>
+</div>
+</body>
+</html>

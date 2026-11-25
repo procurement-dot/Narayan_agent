@@ -4,7 +4,6 @@ export const EMAIL_TABS: readonly { id: EmailTab; label: string }[] = [
   { id: 'priority', label: 'Needs me' },
   { id: 'meetings', label: 'Meetings' },
   { id: 'all', label: 'All email' },
-  { id: 'low', label: 'Low signal' },
   { id: 'drafts', label: 'Drafts' },
   { id: 'unwanted', label: 'Unwanted' },
 ] as const;
